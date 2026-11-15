@@ -15,15 +15,19 @@ from collections.abc import Callable
 from typing import ClassVar
 from unittest import mock
 
-from tools.ci import plan
+import pytest
 
-PLUGIN = """\
-val lanes = listOf("1.0", "1.1", "1.1a", "2.0")
-val previewLanes = listOf("2.1", "main")
-val rejectionLanes = listOf("0.9", "0.9a")
-val clientLane = "1.0"
-"""
-FIXTURE = plan.parse_plugin(PLUGIN)
+import ci_plan as plan
+
+MANIFEST = json.dumps(
+    {
+        "lanes": ["1.0", "1.1", "1.1a", "2.0"],
+        "previewLanes": ["2.1", "main"],
+        "rejectionLanes": ["0.9", "0.9a"],
+        "clientLane": "1.0",
+    }
+)
+FIXTURE = plan.parse_manifest(MANIFEST)
 SHA = "a" * 40
 
 
@@ -35,7 +39,7 @@ def make(**kwargs: str) -> plan.Plan:
 
 def tmux_of(result: plan.Plan) -> list[str]:
     """Return the tmux names of the lanes."""
-    return [leg["tmux"] for leg in result.lanes]
+    return [str(leg["tmux"]) for leg in result.lanes]
 
 
 def lane(result: plan.Plan, tmux: str) -> dict[str, object]:
@@ -136,9 +140,7 @@ def check_a_custom_preview_blocks() -> None:
 def check_refusals_come_with_a_client() -> None:
     """Check that a rejection lane puts the client lane in front of the daemon."""
     result = make(event="workflow_dispatch", scope="full")
-    assert [
-        (leg["tmux"], leg["client"]) for leg in result.lanes if leg["rejection"]
-    ] == [
+    assert [(leg["tmux"], leg["client"]) for leg in result.lanes if leg["rejection"]] == [
         ("0.9", "1.0"),
         ("0.9a", "1.0"),
     ]
@@ -170,9 +172,7 @@ def check_listed_names_keep_their_task() -> None:
 
 def check_unlisted_names_run_the_adhoc_task() -> None:
     """Check that a release, tag, branch or commit outside the lists gets one lane."""
-    result = make(
-        event="workflow_dispatch", scope="custom", tmux_ref=f"1.1b,{SHA},feature/x"
-    )
+    result = make(event="workflow_dispatch", scope="custom", tmux_ref=f"1.1b,{SHA},feature/x")
     assert [(leg["task"], leg["adhoc"]) for leg in result.lanes] == [
         ("test-tmux-adhoc", "1.1b"),
         ("test-tmux-adhoc", "a" * 12),
@@ -182,9 +182,7 @@ def check_unlisted_names_run_the_adhoc_task() -> None:
 
 def check_releases_use_their_tarball() -> None:
     """Check that anything that names a release is built from its tarball."""
-    result = make(
-        event="workflow_dispatch", scope="custom", tmux_ref=f"1.1b,2.1,main,{SHA}"
-    )
+    result = make(event="workflow_dispatch", scope="custom", tmux_ref=f"1.1b,2.1,main,{SHA}")
     assert [(leg["tmux"], leg["source"]) for leg in result.lanes] == [
         ("1.1b", "release"),
         ("2.1", "release"),
@@ -195,9 +193,7 @@ def check_releases_use_their_tarball() -> None:
 
 def check_each_lane_is_verified_against_its_name() -> None:
     """Check that a release must report itself and a development build must say so."""
-    result = make(
-        event="workflow_dispatch", scope="custom", tmux_ref=f"1.1b,main,{SHA}"
-    )
+    result = make(event="workflow_dispatch", scope="custom", tmux_ref=f"1.1b,main,{SHA}")
     assert [leg["verify"] for leg in result.lanes] == ["release", "development", "none"]
 
 
@@ -229,12 +225,8 @@ def check_gradle_runs_on_the_default_jdk() -> None:
 
 def check_tmate_takes_the_one_lane() -> None:
     """Check that a tmate session lands on the single lane and lengthens its timeout."""
-    result = make(
-        event="workflow_dispatch", scope="custom", tmux_ref="1.1", tmate="on-failure"
-    )
-    assert [(leg["tmate"], leg["timeout"]) for leg in result.lanes] == [
-        ("on-failure", 60)
-    ]
+    result = make(event="workflow_dispatch", scope="custom", tmux_ref="1.1", tmate="on-failure")
+    assert [(leg["tmate"], leg["timeout"]) for leg in result.lanes] == [("on-failure", 60)]
 
 
 def check_tmate_refuses_many_lanes() -> None:
@@ -242,10 +234,10 @@ def check_tmate_refuses_many_lanes() -> None:
     try:
         make(event="workflow_dispatch", scope="edges", tmate="before-tests")
     except plan.PlanError as error:
-        assert "exactly one" in str(error)
+        message = str(error)
     else:
         message = "tmate on two lanes was accepted"
-        raise AssertionError(message)
+    assert "exactly one" in message
 
 
 def check_tmate_needs_a_dispatch() -> None:
@@ -253,10 +245,10 @@ def check_tmate_needs_a_dispatch() -> None:
     try:
         make(event="push", scope="custom", tmux_ref="1.1", tmate="on-failure")
     except plan.PlanError as error:
-        assert "workflow_dispatch" in str(error)
+        message = str(error)
     else:
         message = "tmate on a push was accepted"
-        raise AssertionError(message)
+    assert "workflow_dispatch" in message
 
 
 def check_bad_ref_is_refused() -> None:
@@ -368,9 +360,7 @@ def previews_experimental_everywhere(
     return REAL_LEG(leg, jdk, "full", manifest)
 
 
-def no_client(
-    leg: plan.Leg, jdk: str, scope: str, manifest: plan.Manifest
-) -> dict[str, object]:
+def no_client(leg: plan.Leg, jdk: str, scope: str, manifest: plan.Manifest) -> dict[str, object]:
     """Stand in for a plan that forgets the client of a rejection lane."""
     item = REAL_LEG(leg, jdk, scope, manifest)
     item["client"] = ""
@@ -444,13 +434,18 @@ MUTANTS: dict[Callable[[], None], tuple[str, object]] = {
 }
 
 
+def name_of(check: Callable[[], None]) -> str:
+    """Return the name of a check, for the report of a failed subtest."""
+    return getattr(check, "__name__", repr(check))
+
+
 class PlanRulesTest(unittest.TestCase):
     """Run every check against the real plan."""
 
     def test_checks_pass_on_the_real_plan(self) -> None:
         """Every rule holds."""
         for check in MUTANTS:
-            with self.subTest(check=check.__name__):
+            with self.subTest(check=name_of(check)):
                 check()
 
     def test_every_check_has_a_mutant(self) -> None:
@@ -460,7 +455,7 @@ class PlanRulesTest(unittest.TestCase):
             for name, value in globals().items()
             if name.startswith("check_") and callable(value)
         }
-        self.assertEqual(checks, set(MUTANTS))
+        assert checks == set(MUTANTS)
 
 
 class NegativeTest(unittest.TestCase):
@@ -469,10 +464,10 @@ class NegativeTest(unittest.TestCase):
     def test_removing_a_rule_fails_its_check(self) -> None:
         """A check that survives its rule's removal is not testing it."""
         for check, (name, broken) in MUTANTS.items():
-            with self.subTest(check=check.__name__, removed=name):
+            with self.subTest(check=name_of(check), removed=name):
                 with (
                     mock.patch.object(plan, name, broken),
-                    self.assertRaises((AssertionError, plan.PlanError)),
+                    pytest.raises((AssertionError, plan.PlanError)),
                 ):
                     check()
                 check()
@@ -480,10 +475,8 @@ class NegativeTest(unittest.TestCase):
     def test_the_edge_rule_fails_without_the_first_release(self) -> None:
         """Taking the second release for the floor breaks the edge check."""
         with (
-            mock.patch.object(
-                plan.Manifest, "oldest", property(lambda self: self.lanes[1])
-            ),
-            self.assertRaises(AssertionError),
+            mock.patch.object(plan.Manifest, "oldest", property(lambda self: self.lanes[1])),
+            pytest.raises(AssertionError),
         ):
             check_push_runs_edges()
         check_push_runs_edges()
@@ -494,112 +487,116 @@ class InputTest(unittest.TestCase):
 
     def test_an_unknown_scope_is_refused(self) -> None:
         """Only edges, full and custom exist."""
-        with self.assertRaises(plan.PlanError):
+        with pytest.raises(plan.PlanError):
             make(event="workflow_dispatch", scope="everything")
 
     def test_tmux_ref_without_custom_is_refused(self) -> None:
         """A forgotten scope must not silently run the edges."""
-        with self.assertRaises(plan.PlanError):
+        with pytest.raises(plan.PlanError):
             make(event="workflow_dispatch", scope="edges", tmux_ref="1.1")
 
     def test_custom_needs_something_to_customize(self) -> None:
         """An empty custom dispatch is a mistake."""
-        with self.assertRaises(plan.PlanError):
+        with pytest.raises(plan.PlanError):
             make(event="workflow_dispatch", scope="custom")
 
     def test_a_bad_jdk_is_refused(self) -> None:
         """A JDK is a two-digit feature release."""
         for bad in ("latest", "25;id", "8", "250"):
-            with self.subTest(bad=bad), self.assertRaises(plan.PlanError):
+            with self.subTest(bad=bad), pytest.raises(plan.PlanError):
                 make(event="workflow_dispatch", scope="custom", jdk=bad)
 
     def test_jdk_alone_uses_the_edges(self) -> None:
         """A JDK without refs runs the edges under it."""
         result = make(event="workflow_dispatch", scope="custom", jdk="27")
-        self.assertEqual(
-            [(leg["tmux"], leg["jdk"]) for leg in result.lanes],
-            [("1.0", "27"), ("2.0", "27")],
-        )
+        assert [(leg["tmux"], leg["jdk"]) for leg in result.lanes] == [("1.0", "27"), ("2.0", "27")]
 
     def test_timeouts_follow_the_build(self) -> None:
         """A clone and autogen take longer than a tarball."""
-        result = make(
-            event="workflow_dispatch", scope="custom", tmux_ref=f"1.1,main,{SHA}"
-        )
-        self.assertEqual([leg["timeout"] for leg in result.lanes], [15, 25, 25])
+        result = make(event="workflow_dispatch", scope="custom", tmux_ref=f"1.1,main,{SHA}")
+        assert [leg["timeout"] for leg in result.lanes] == [15, 25, 25]
 
     def test_outputs_are_single_line_json(self) -> None:
         """GITHUB_OUTPUT takes one line per value."""
         outputs = make(event="push", ref_type="tag").outputs()
         for value in outputs.values():
-            self.assertNotIn("\n", value)
-        self.assertEqual(json.loads(outputs["lanes"])["include"][0]["tmux"], "1.0")
-        self.assertEqual(outputs["jobs"], "8")
+            assert "\n" not in value
+        assert json.loads(outputs["lanes"])["include"][0]["tmux"] == "1.0"
+        assert outputs["jobs"] == "8"
 
 
-class PluginTest(unittest.TestCase):
+class ManifestTest(unittest.TestCase):
     """The plan reads the build's lists, and refuses what it cannot read."""
 
-    base: ClassVar[dict[str, str]] = {
-        "lanes": 'val lanes = listOf("1.0", "2.0")',
-        "preview": 'val previewLanes = listOf("main")',
-        "rejection": 'val rejectionLanes = listOf("0.9")',
-        "client": 'val clientLane = "1.0"',
+    base: ClassVar[dict[str, object]] = {
+        "lanes": ["1.0", "2.0"],
+        "previewLanes": ["main"],
+        "rejectionLanes": ["0.9"],
+        "clientLane": "1.0",
     }
 
-    def parse(self, **changes: str) -> plan.Manifest:
-        """Parse the base declarations with some replaced."""
-        return plan.parse_plugin("\n".join({**self.base, **changes}.values()))
+    def parse(self, **changes: object) -> plan.Manifest:
+        """Parse the base manifest with some keys replaced."""
+        return plan.parse_manifest(json.dumps({**self.base, **changes}))
 
-    def test_the_shipped_plugin_loads(self) -> None:
+    def test_the_shipped_manifest_loads(self) -> None:
         """The real build declares lists the plan can read."""
         manifest = plan.load_manifest()
-        self.assertEqual(manifest.oldest, manifest.lanes[0])
-        self.assertIn(manifest.client, manifest.lanes)
+        assert manifest.oldest == manifest.lanes[0]
+        assert manifest.client in manifest.lanes
         full = plan.make_plan(manifest, event="schedule")
-        self.assertEqual(
-            tmux_of(full),
-            [*manifest.lanes, *manifest.rejection, *manifest.preview],
-        )
+        assert tmux_of(full) == [*manifest.lanes, *manifest.rejection, *manifest.preview]
 
-    def test_a_declaration_that_spans_lines_is_refused(self) -> None:
-        """The plan reads one-line declarations, as tmux-matrix.sh does."""
-        with self.assertRaises(plan.PlanError):
-            self.parse(lanes='val lanes = listOf(\n    "1.0", "2.0"\n)')
+    def test_text_that_is_not_json_is_refused(self) -> None:
+        """A manifest that does not parse names that, not a missing key."""
+        with pytest.raises(plan.PlanError):
+            plan.parse_manifest('{"lanes": ["1.0",')
 
-    def test_a_missing_declaration_is_refused(self) -> None:
-        """Each of the four is required."""
+    def test_a_manifest_that_is_not_an_object_is_refused(self) -> None:
+        """The four lists hang off an object."""
+        with pytest.raises(plan.PlanError):
+            plan.parse_manifest('["1.0"]')
+
+    def test_a_missing_or_empty_entry_is_refused(self) -> None:
+        """Each of the four is required, and a list needs a lane."""
         for key in self.base:
-            with self.subTest(key=key), self.assertRaises(plan.PlanError):
-                plan.parse_plugin(
-                    "\n".join(v for k, v in self.base.items() if k != key)
-                )
+            without = {k: v for k, v in self.base.items() if k != key}
+            with self.subTest(key=key), pytest.raises(plan.PlanError):
+                plan.parse_manifest(json.dumps(without))
+        for key in ("lanes", "previewLanes", "rejectionLanes"):
+            with self.subTest(key=key), pytest.raises(plan.PlanError):
+                self.parse(**{key: []})
+
+    def test_a_list_of_anything_but_strings_is_refused(self) -> None:
+        """A number in a lane list is a typo, not a release."""
+        with pytest.raises(plan.PlanError):
+            self.parse(lanes=["1.0", 2.0])
 
     def test_lanes_must_be_oldest_first(self) -> None:
         """An out-of-order list would make the last entry the wrong edge."""
-        with self.assertRaises(plan.PlanError):
-            self.parse(lanes='val lanes = listOf("2.0", "1.0")')
+        with pytest.raises(plan.PlanError):
+            self.parse(lanes=["2.0", "1.0"])
 
     def test_suffix_letters_order_after_the_release(self) -> None:
         """3.7 < 3.7a < 3.7b, as the library orders them."""
-        self.parse(lanes='val lanes = listOf("1.0", "1.0a", "1.0b", "1.1")')
-        with self.assertRaises(plan.PlanError):
-            self.parse(lanes='val lanes = listOf("1.0a", "1.0")')
+        self.parse(lanes=["1.0", "1.0a", "1.0b", "1.1"])
+        with pytest.raises(plan.PlanError):
+            self.parse(lanes=["1.0a", "1.0"])
 
     def test_a_rejection_lane_must_sit_below_the_floor(self) -> None:
         """A refused release at or above the floor contradicts the table."""
-        with self.assertRaises(plan.PlanError):
-            self.parse(rejection='val rejectionLanes = listOf("1.0")')
+        with pytest.raises(plan.PlanError):
+            self.parse(rejectionLanes=["1.0"])
 
     def test_the_client_must_be_a_lane(self) -> None:
         """The client reaches the old daemons, so it must be a release the build runs."""
-        with self.assertRaises(plan.PlanError):
-            self.parse(client='val clientLane = "1.5"')
+        with pytest.raises(plan.PlanError):
+            self.parse(clientLane="1.5")
 
     def test_a_preview_cannot_repeat_a_lane(self) -> None:
         """A name is a lane or a preview, not both."""
-        with self.assertRaises(plan.PlanError):
-            self.parse(preview='val previewLanes = listOf("2.0")')
+        with pytest.raises(plan.PlanError):
+            self.parse(previewLanes=["2.0"])
 
 
 class CommandLineTest(unittest.TestCase):
@@ -609,13 +606,11 @@ class CommandLineTest(unittest.TestCase):
         """Each output lands as `name=value`."""
         with tempfile.TemporaryDirectory() as directory:
             output = pathlib.Path(directory) / "out"
-            status = plan.main(
-                ["matrix", "--event", "push", "--github-output", str(output)]
-            )
+            status = plan.main(["matrix", "--event", "push", "--github-output", str(output)])
             lines = dict(line.split("=", 1) for line in output.read_text().splitlines())
-        self.assertEqual(status, 0)
-        self.assertEqual(lines["scope"], "edges")
-        self.assertEqual(len(json.loads(lines["lanes"])["include"]), 2)
+        assert status == 0
+        assert lines["scope"] == "edges"
+        assert len(json.loads(lines["lanes"])["include"]) == 2
 
     def test_a_refused_plan_exits_nonzero(self) -> None:
         """Exit nonzero when tmate has two lanes to attach to."""
@@ -630,14 +625,14 @@ class CommandLineTest(unittest.TestCase):
                 "on-failure",
             ]
         )
-        self.assertEqual(status, 1)
+        assert status == 1
 
     def test_verify_reports_a_failed_job(self) -> None:
         """The aggregate step exits nonzero on any non-success."""
         good = json.dumps({"lanes": {"result": "success"}})
         bad = json.dumps({"lanes": {"result": "failure"}})
-        self.assertEqual(plan.main(["verify", "--needs", good]), 0)
-        self.assertEqual(plan.main(["verify", "--needs", bad]), 1)
+        assert plan.main(["verify", "--needs", good]) == 0
+        assert plan.main(["verify", "--needs", bad]) == 1
 
 
 if __name__ == "__main__":

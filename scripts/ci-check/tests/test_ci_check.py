@@ -12,14 +12,14 @@ import shutil
 import tempfile
 import unittest
 
-from tools.ci import check
+import ci_check as check
 
-ROOT = pathlib.Path(__file__).resolve().parents[2]
+ROOT = pathlib.Path(__file__).resolve().parents[3]
 COPIED = (
     "README.md",
     "RELEASING.md",
     check.CONTRIBUTING,
-    check.PLUGIN,
+    check.MANIFEST,
     check.MATRIX,
     check.RELEASE,
     ".github/workflows/ci.yml",
@@ -56,7 +56,7 @@ class CheckTest(unittest.TestCase):
         """Replace `old` with `new` in a copied file, which must contain it."""
         path = self.root / name
         text = path.read_text()
-        self.assertEqual(text.count(old), count, f"{old!r} in {name}")
+        assert text.count(old) == count, f"{old!r} in {name}"
         path.write_text(text.replace(old, new))
 
     def append(self, name: str, text: str) -> None:
@@ -71,22 +71,26 @@ class CheckTest(unittest.TestCase):
     def assertFlags(self, fragment: str) -> None:
         """Assert some problem mentions `fragment`."""
         problems = self.problems()
-        self.assertTrue(
-            any(fragment in problem for problem in problems),
-            f"no problem mentions {fragment!r}: {problems}",
+        assert any(fragment in problem for problem in problems), (
+            f"no problem mentions {fragment!r}: {problems}"
         )
 
-    def test_the_repository_agrees_with_its_plugin(self) -> None:
+    def test_the_repository_agrees_with_its_manifest(self) -> None:
         """The pages and workflows in this checkout pass every guard."""
-        self.assertEqual(check.check(ROOT), [])
-        self.assertEqual(self.problems(), [])
+        assert check.check(ROOT) == []
+        assert self.problems() == []
 
-    def test_a_new_lane_in_the_plugin_reaches_every_page(self) -> None:
+    def test_a_new_lane_in_the_manifest_reaches_every_page(self) -> None:
         """Adding a release to `lanes` without editing the docs names each page."""
-        self.edit(check.PLUGIN, '"3.7c")', '"3.7c", "3.9")')
+        self.edit(check.MANIFEST, '"3.7c"],', '"3.7c", "3.9"],')
         problems = self.problems()
         for page in ("README.md", check.CONTRIBUTING):
-            self.assertTrue(any(page in p and "3.9" in p for p in problems), page)
+            assert any(page in p and "3.9" in p for p in problems), page
+
+    def test_a_manifest_without_lanes_cannot_be_checked(self) -> None:
+        """The guards need a range, so a manifest that names none stops them."""
+        (self.root / check.MANIFEST).write_text('{"previewLanes": ["main"]}')
+        assert check.main(["--root", str(self.root)]) == 1
 
     def test_a_page_with_another_range_is_flagged(self) -> None:
         """A README that still says 3.7b is the newest is caught."""
@@ -124,9 +128,7 @@ class CheckTest(unittest.TestCase):
             "runs the whole tmux\n   matrix itself",
             "runs the tmux matrix",
         )
-        self.assertFlags(
-            "RELEASING.md does not say the release runs the whole tmux matrix"
-        )
+        self.assertFlags("RELEASING.md does not say the release runs the whole tmux matrix")
 
     def test_a_list_in_the_workflow_is_flagged(self) -> None:
         """A hard-coded second list would drift from the plugin."""
@@ -207,13 +209,11 @@ class CheckTest(unittest.TestCase):
 
     def test_quoted_values_are_not_flagged(self) -> None:
         """The workflow as written has none."""
-        self.assertEqual(check.dispatch_booleans((ROOT / check.MATRIX).read_text()), [])
+        assert check.dispatch_booleans((ROOT / check.MATRIX).read_text()) == []
 
     def test_an_unpinned_tmate_is_flagged(self) -> None:
         """The action is pinned by commit."""
-        self.edit(
-            check.MATRIX, f"action-tmate@{SHA} # v3.24", "action-tmate@v3 # v3", 2
-        )
+        self.edit(check.MATRIX, f"action-tmate@{SHA} # v3.24", "action-tmate@v3 # v3", 2)
         self.assertFlags("not a full commit")
 
     def test_a_tmate_open_to_everyone_is_flagged(self) -> None:
@@ -332,8 +332,7 @@ class CheckTest(unittest.TestCase):
                 )
                 self.assertFlags(f"{path}:")
                 self.assertFlags(
-                    f"(job raw, step Install) runs {tool} directly; "
-                    "run it through tools/apt-get.sh"
+                    f"(job raw, step Install) runs {tool} directly; run it through tools/apt-get.sh"
                 )
                 (self.root / path).write_text(original)
 
@@ -347,7 +346,7 @@ class CheckTest(unittest.TestCase):
             "          # sudo apt-get update\n"
             "          ./tools/apt-get.sh install -y tmux\n",
         )
-        self.assertEqual(self.problems(), [])
+        assert self.problems() == []
 
     def test_a_raw_apt_get_in_an_action_is_flagged(self) -> None:
         """A composite action's script is held to the same rule."""
@@ -364,21 +363,18 @@ class CheckTest(unittest.TestCase):
 
     def test_every_published_module_is_checked_for_a_changelog(self) -> None:
         """The guard finds all ten jars, and not the BOM, which has none."""
-        self.assertEqual(
-            check.published_modules(self.root),
-            [
-                "libtmux",
-                "libtmux-jackson",
-                "libtmux-junit5",
-                "libtmux-kotlin",
-                "libtmux-mcp",
-                "libtmux-scala",
-                "libtmux-scala-cats",
-                "libtmux-scala-ox",
-                "libtmux-workspace",
-                "libtmux-workspace-cli",
-            ],
-        )
+        assert check.published_modules(self.root) == [
+            "libtmux",
+            "libtmux-jackson",
+            "libtmux-junit5",
+            "libtmux-kotlin",
+            "libtmux-mcp",
+            "libtmux-scala",
+            "libtmux-scala-cats",
+            "libtmux-scala-ox",
+            "libtmux-workspace",
+            "libtmux-workspace-cli",
+        ]
 
     def test_a_module_without_a_changelog_is_flagged(self) -> None:
         """Deleting a module's changelog names the module."""
@@ -397,7 +393,9 @@ class CheckTest(unittest.TestCase):
     def test_another_modules_changelog_is_flagged(self) -> None:
         """A changelog pasted over another module's fails where it was pasted."""
         shutil.copy(ROOT / "libtmux/CHANGELOG.md", self.root / "libtmux-mcp/CHANGELOG.md")
-        self.assertFlags('libtmux-mcp/CHANGELOG.md does not open with "Notable changes to `libtmux-mcp`."')
+        self.assertFlags(
+            'libtmux-mcp/CHANGELOG.md does not open with "Notable changes to `libtmux-mcp`."'
+        )
 
     def test_a_changelog_without_an_unreleased_section_is_flagged(self) -> None:
         """The next release needs a section to land under."""
@@ -406,7 +404,9 @@ class CheckTest(unittest.TestCase):
 
     def test_an_unreleased_heading_in_a_fence_does_not_count(self) -> None:
         """Only a heading outside a code block is a section."""
-        self.edit("libtmux-mcp/CHANGELOG.md", "\n## Unreleased\n", "\n```markdown\n## Unreleased\n```\n")
+        self.edit(
+            "libtmux-mcp/CHANGELOG.md", "\n## Unreleased\n", "\n```markdown\n## Unreleased\n```\n"
+        )
         self.assertFlags('libtmux-mcp/CHANGELOG.md has no "## Unreleased" section')
 
     def test_a_readme_that_does_not_link_its_changelog_is_flagged(self) -> None:
@@ -418,7 +418,12 @@ class CheckTest(unittest.TestCase):
         """The jar is where the file travels, so the convention has to copy it."""
         path = self.root / check.PUBLICATION
         text = path.read_text()
-        path.write_text(text.replace('from(layout.projectDirectory.file("CHANGELOG.md"))', '// from(layout.projectDirectory.file("CHANGELOG.md"))'))
+        path.write_text(
+            text.replace(
+                'from(layout.projectDirectory.file("CHANGELOG.md"))',
+                '// from(layout.projectDirectory.file("CHANGELOG.md"))',
+            )
+        )
         self.assertFlags("does not ship CHANGELOG.md in the jar")
 
 

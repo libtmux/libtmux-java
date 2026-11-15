@@ -237,8 +237,9 @@ What a change is expected to carry:
   `## Unreleased` in the `CHANGELOG.md` of the module it changes, or in the root
   file when it spans modules; [`WRITING.md`](WRITING.md#changelog) says which.
   Nothing enforces that an entry exists, which is why it is written down. What
-  is enforced is the file: `python3 -m tools.ci.check` fails when a published
-  module loses its changelog or its `## Unreleased` section, and
+  is enforced is the file: [`scripts/ci-check`](../scripts/ci-check/README.md)
+  fails when a published module loses its changelog or its `## Unreleased`
+  section, and
   `scripts/verify-staged-release` refuses a jar that does not carry it.
 - **Nothing generated-looking.** Names that say what a thing is for, comments
   that say why rather than what, no abstraction without a second caller.
@@ -282,7 +283,7 @@ tag, a branch or a 40-hex commit from
 $ gh workflow run tmux-matrix.yml --ref my-branch -f scope=custom -f tmux-ref=3.6b,master
 ```
 
-A name in the plugin's lists runs its own Gradle task. Anything else runs as
+A name in `gradle/tmux-lanes.json` runs its own Gradle task. Anything else runs as
 the ad hoc lane, `./gradlew test-tmux-adhoc -PlibtmuxAdHoc=<name>`, with the
 build in `~/tmux-builds/<name>`; a commit is shortened to 12 characters. A
 branch or commit has no release to check, and its control-mode tests run. A
@@ -309,7 +310,10 @@ The dispatch form is only available once `tmux-matrix.yml` carries the inputs on
 the default branch. This prints the lanes a dispatch would run, without a runner:
 
 ```console
-$ python3 -m tools.ci.plan matrix --event workflow_dispatch --scope custom --tmux-ref 3.6b,master
+$ uv run scripts/ci-plan/ci_plan.py matrix \
+    --event workflow_dispatch \
+    --scope custom \
+    --tmux-ref 3.6b,master
 ```
 
 ### Native tmux in CI
@@ -344,8 +348,8 @@ $ /tmp/tmux-build-test/bin/python -m pip install pytest==8.4.2
 $ /tmp/tmux-build-test/bin/python -m pytest .github/scripts/test_tmux_build.py
 ```
 
-`python3 -m tools.ci.check` fails when the README, this page or the workflows
-disagree with the plugin's lists. Each dispatch is its own run: it does not
+[`scripts/ci-check`](../scripts/ci-check/README.md) fails when the README, this
+page or the workflows disagree with `gradle/tmux-lanes.json`. Each dispatch is its own run: it does not
 cancel the push run on its branch, and another dispatch does not cancel it.
 `ci.yml` has no tmux axis, so it takes no inputs.
 
@@ -361,8 +365,8 @@ version matrix in the CI workflow, which builds on 25 and 27, and the claim
 whole real-tmux suite runs against every one of those releases each week and
 before a release, and against the oldest and newest of them, 3.3a and 3.7c, on
 every push and pull request. Each lane checks it really ran the tmux it is
-named after. The range is the `lanes` list in
-`libtmux.tmux-matrix.gradle.kts`, which the workflow plans its matrix from, so
+named after. The range is the `lanes` list in `gradle/tmux-lanes.json`, which
+the Gradle plugin `libtmux.tmux-matrix` and the workflow's plan both read, so
 moving the range means moving that list and the README together.
 
 Releases below the floor have rejection lanes that run only the version check

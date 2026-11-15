@@ -72,7 +72,7 @@ See [execution](execution.md) for control acknowledgement limits, and
 [generator-tests]:
   ../../../build-logic/codegen/src/test/kotlin/io/github/libtmux/codegen/scala/ScalaOperationGeneratorTest.kt
 [tmux-matrix]:
-  ../../../build-logic/conventions/src/main/kotlin/libtmux.tmux-matrix.gradle.kts
+  ../../../gradle/tmux-lanes.json
 [java-options]:
   ../../../libtmux/src/main/java/io/github/libtmux/Options.java
 [buffers]:

@@ -1,28 +1,33 @@
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.12"
+# dependencies = []
+# ///
 """Check that the docs and the workflows follow the build's tmux lanes.
 
-The Gradle plugin's `lanes` are the one list of supported tmux releases. This
-fails when a page states a range the plugin does not, when the matrix workflow
-carries a list of its own, and when the workflow structure the plan relies on
-has been undone: a dispatch input spliced into a script, a tmate step that is
-not pinned or not limited to the actor, an aggregate job that forgot a job, a
-release that no longer runs the whole table before it publishes.
+The `lanes` in `gradle/tmux-lanes.json` are the one list of supported tmux
+releases. This fails when a page states a range the manifest does not, when the
+matrix workflow carries a list of its own, and when the workflow structure the
+plan relies on has been undone: a dispatch input spliced into a script, a tmate
+step that is not pinned or not limited to the actor, an aggregate job that
+forgot a job, a release that no longer runs the whole table before it publishes.
 
 Run from the repository root:
 
-    python3 -m tools.ci.check
+    uv run scripts/ci-check/ci_check.py
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import pathlib
 import re
 import sys
-
-from tools.ci.plan import Manifest, PlanError, load_manifest
+from typing import NamedTuple
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-PLUGIN = "build-logic/conventions/src/main/kotlin/libtmux.tmux-matrix.gradle.kts"
+MANIFEST = "gradle/tmux-lanes.json"
 MATRIX = ".github/workflows/tmux-matrix.yml"
 RELEASE = ".github/workflows/release.yml"
 CONTRIBUTING = ".github/CONTRIBUTING.md"
@@ -44,9 +49,7 @@ SPLICED = re.compile(
 RUN_KEY = re.compile(r"^(\s*)(?:- )?run:\s*(.*)$")
 MATRIX_KEY = re.compile(r"(?m)^\s*-?\s*(?:tmux|client):")
 QUOTED_RELEASE = re.compile(r"'\d+\.\d+[a-z]?'")
-APT_CALL = re.compile(
-    r"(?:^|[;&|(`]|\$\()\s*(?:sudo\s+(?:-\S+\s+)*)?(apt-get|apt)(?=\s|$)"
-)
+APT_CALL = re.compile(r"(?:^|[;&|(`]|\$\()\s*(?:sudo\s+(?:-\S+\s+)*)?(apt-get|apt)(?=\s|$)")
 STEP_START = re.compile(r"^( *)- [\w-]+:")
 JOB_START = re.compile(r"^  ([\w-]+):\s*$")
 APT_FIX = "run it through tools/apt-get.sh"
@@ -129,15 +132,44 @@ def check_apt(name: str, text: str) -> list[str]:
         call = APT_CALL.search(body)
         if call and not body.lstrip().startswith("#"):
             problems.append(
-                f"{name}:{number} ({_where(lines, number)}) runs {call[1]} "
-                f"directly; {APT_FIX}"
+                f"{name}:{number} ({_where(lines, number)}) runs {call[1]} directly; {APT_FIX}"
             )
     return problems
 
 
-def check_docs(root: pathlib.Path, manifest: Manifest) -> list[str]:
-    """Return where a page disagrees with the plugin's lanes."""
-    ends = (manifest.oldest, manifest.newest)
+class ManifestError(Exception):
+    """The manifest names no range of supported releases."""
+
+
+class Ends(NamedTuple):
+    """The oldest and the newest supported tmux release."""
+
+    oldest: str
+    newest: str
+
+
+def read_ends(path: pathlib.Path) -> Ends:
+    """Return the ends of the `lanes` list in the manifest at `path`.
+
+    The planner checks the whole manifest; the guards need only the range.
+    """
+    try:
+        lanes = json.loads(path.read_text())["lanes"]
+    except (json.JSONDecodeError, KeyError, TypeError) as error:
+        message = f"{path.name} has no list named lanes: {error}"
+        raise ManifestError(message) from error
+    if (
+        not isinstance(lanes, list)
+        or len(lanes) < 2
+        or not all(isinstance(lane, str) for lane in lanes)
+    ):
+        message = f"{path.name} needs a list of at least two release names in lanes"
+        raise ManifestError(message)
+    return Ends(lanes[0], lanes[-1])
+
+
+def check_docs(root: pathlib.Path, ends: Ends) -> list[str]:
+    """Return where a page disagrees with the manifest's lanes."""
     problems: list[str] = []
     for page in ("README.md", CONTRIBUTING):
         stated = RANGE_CLAIM.findall(_squash((root / page).read_text()))
@@ -156,19 +188,18 @@ def check_docs(root: pathlib.Path, manifest: Manifest) -> list[str]:
     ]
     contributing = (root / CONTRIBUTING).read_text()
     if "gh workflow run tmux-matrix.yml" not in contributing:
-        problems.append(
-            f"{CONTRIBUTING} has no `gh workflow run tmux-matrix.yml` command"
-        )
+        problems.append(f"{CONTRIBUTING} has no `gh workflow run tmux-matrix.yml` command")
     releasing = _squash((root / "RELEASING.md").read_text())
     if "runs the whole tmux matrix itself" not in releasing:
-        problems.append(
-            "RELEASING.md does not say the release runs the whole tmux matrix"
-        )
+        problems.append("RELEASING.md does not say the release runs the whole tmux matrix")
     return problems
 
 
 def _check_tmate_step(step: str) -> str:
-    pin = TMATE.search(step)[1]
+    found = TMATE.search(step)
+    if found is None:
+        return "an action-tmate step names no action"
+    pin = found[1]
     if re.fullmatch(r"[0-9a-f]{40}", pin) is None:
         return f"action-tmate is pinned to {pin}, not a full commit"
     if "limit-access-to-actor: true" not in step:
@@ -238,9 +269,7 @@ def check_matrix(text: str) -> list[str]:
     code = _code(text)
     problems: list[str] = []
     if MATRIX_KEY.search(code) or QUOTED_RELEASE.search(code):
-        problems.append(
-            "tmux-matrix.yml lists tmux releases itself; the plan reads the plugin"
-        )
+        problems.append("tmux-matrix.yml lists tmux releases itself; the plan reads the manifest")
     problems += [
         f"tmux-matrix.yml:{number} splices an input into a script; use env:"
         for number, body in _run_bodies(text)
@@ -251,8 +280,7 @@ def check_matrix(text: str) -> list[str]:
         problems.append("tmux-matrix.yml cannot be called, so a release cannot run it")
     elif re.findall(r"(?m)^      ([A-Za-z][\w-]*):", call[1]) != ["scope"]:
         problems.append(
-            "tmux-matrix.yml takes more than a scope when called; "
-            "a release runs the table as it is"
+            "tmux-matrix.yml takes more than a scope when called; a release runs the table as it is"
         )
 
     problems += [
@@ -269,23 +297,15 @@ def check_matrix(text: str) -> list[str]:
     listed = set(re.findall(r"(?m)^      - ([\w-]+)$", aggregate.split("steps:")[0]))
     wanted = set(jobs) - {"required"}
     problems += [f"required does not need {job}" for job in sorted(wanted - listed)]
-    problems += [
-        f"required needs {job}, which is not a job" for job in sorted(listed - wanted)
-    ]
+    problems += [f"required needs {job}, which is not a job" for job in sorted(listed - wanted)]
 
     group = re.search(r"(?m)^  group: (.*)$", text.split("concurrency:", 1)[-1])
-    if (
-        not group
-        or "github.run_id" not in group[1]
-        or "workflow_dispatch" not in group[1]
-    ):
+    if not group or "github.run_id" not in group[1] or "workflow_dispatch" not in group[1]:
         problems.append("the concurrency group does not separate dispatch runs")
 
     tmate = [step for step in _steps(jobs.get("lanes", "")) if TMATE.search(step)]
     if len(tmate) != 2:
-        problems.append(
-            "the lanes job needs a before-tests and an on-failure tmate step"
-        )
+        problems.append("the lanes job needs a before-tests and an on-failure tmate step")
     problems += [_check_tmate_step(step) for step in tmate]
     if len(TMATE.findall(code)) != len(tmate):
         problems.append("action-tmate appears outside the lanes job")
@@ -297,17 +317,12 @@ def check_release(text: str) -> list[str]:
     problems = []
     jobs = _jobs(text)
     job = jobs.get("tmux-matrix", "")
-    if (
-        "uses: ./.github/workflows/tmux-matrix.yml" not in job
-        or "scope: full" not in job
-    ):
+    if "uses: ./.github/workflows/tmux-matrix.yml" not in job or "scope: full" not in job:
         problems.append("release.yml does not run tmux-matrix.yml at scope full")
     if not re.search(r"needs:\s*\[tmux-matrix]", jobs.get("publish", "")):
         problems.append("the publish job does not wait for the tmux matrix")
     if "--workflow tmux-matrix.yml" in text:
-        problems.append(
-            "release.yml trusts an earlier tmux matrix run instead of running one"
-        )
+        problems.append("release.yml trusts an earlier tmux matrix run instead of running one")
     return problems
 
 
@@ -355,7 +370,7 @@ def check_changelogs(root: pathlib.Path) -> list[str]:
             continue
         lines = _outside_fences(path.read_text())
         if f"Notable changes to `{module}`." not in lines:
-            problems.append(f"{label} does not open with \"Notable changes to `{module}`.\"")
+            problems.append(f'{label} does not open with "Notable changes to `{module}`."')
         if "## Unreleased" not in lines:
             problems.append(f'{label} has no "## Unreleased" section')
         readme = root / module / "README.md"
@@ -377,9 +392,8 @@ def _outside_fences(text: str) -> list[str]:
 
 
 def check(root: pathlib.Path) -> list[str]:
-    """Return every disagreement between the plugin, the docs and the workflows."""
-    manifest = load_manifest(root / PLUGIN)
-    problems = check_docs(root, manifest)
+    """Return every disagreement between the manifest, the docs and the workflows."""
+    problems = check_docs(root, read_ends(root / MANIFEST))
     problems += check_changelogs(root)
     problems += check_matrix((root / MATRIX).read_text())
     problems += check_release((root / RELEASE).read_text())
@@ -404,7 +418,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         problems = check(args.root.resolve())
-    except (PlanError, OSError) as error:
+    except (ManifestError, OSError) as error:
         problems = [f"cannot check: {error}"]
     for problem in problems:
         print(problem, file=sys.stderr)

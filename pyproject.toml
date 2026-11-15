@@ -25,6 +25,8 @@ exclude-newer = "3 days"
 # Each script is a plain module in its own directory, so tests import it by
 # directory.
 pythonpath = [
+  "scripts/ci-check",
+  "scripts/ci-plan",
   "scripts/verify-staged-release",
 ]
 testpaths = ["scripts"]
@@ -42,6 +44,8 @@ addopts = [
 target-version = "py312"
 line-length = 100
 src = [
+  "scripts/ci-check",
+  "scripts/ci-plan",
   "scripts/verify-staged-release",
 ]
 
@@ -51,6 +55,8 @@ extend-select = ["ANN", "B", "C4", "I", "PT", "PTH", "RUF", "SIM", "UP"]
 [tool.ty.environment]
 python-version = "3.12"
 extra-paths = [
+  "scripts/ci-check",
+  "scripts/ci-plan",
   "scripts/verify-staged-release",
 ]
 

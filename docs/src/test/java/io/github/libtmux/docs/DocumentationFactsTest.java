@@ -159,14 +159,14 @@ final class DocumentationFactsTest {
      * build and left in the README is a promise nothing keeps. A spelled-out count drifts as lanes
      * are added, so prose says "every supported release" and the ends are checked here.
      *
-     * <p>The build's {@code lanes} are the list. The workflow carries none of its own: it plans the
-     * matrix from them, so a second list there would be the one thing that could disagree.
+     * <p>The {@code lanes} in {@code gradle/tmux-lanes.json} are the list. The workflow carries none of
+     * its own: it plans the matrix from them, so a second list there would be the one thing that could
+     * disagree.
      */
     @Test
     void theReadmeNamesTheEndsOfTheMatrixItClaims() {
-        Matcher lanes = Pattern.compile("(?m)^val lanes = listOf\\((.*)\\)$")
-                .matcher(read("build-logic/conventions/src/main/kotlin/libtmux.tmux-matrix.gradle.kts"));
-        assertTrue(lanes.find(), "the tmux matrix plugin declares no lanes");
+        Matcher lanes = Pattern.compile("\"lanes\"\\s*:\\s*\\[([^\\]]*)\\]").matcher(read("gradle/tmux-lanes.json"));
+        assertTrue(lanes.find(), "the tmux lanes manifest declares no lanes");
         List<String> running = Pattern.compile("\"([^\"]+)\"")
                 .matcher(lanes.group(1))
                 .results()
@@ -187,7 +187,7 @@ final class DocumentationFactsTest {
                 Pattern.compile("tmux:\\s*\\[")
                         .matcher(read(".github/workflows/tmux-matrix.yml"))
                         .find(),
-                "the matrix workflow lists tmux versions of its own; it plans them from the plugin's lanes");
+                "the matrix workflow lists tmux versions of its own; it plans them from the manifest's lanes");
     }
 
     /**

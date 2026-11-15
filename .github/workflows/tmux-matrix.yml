@@ -5,7 +5,7 @@ name: tmux matrix
 #
 # A push or pull request runs the oldest and newest release of the range. The weekly schedule, a
 # dispatch with `scope: full` and the release workflow, which calls this with `scope: full`, run all
-# of it, the releases below the floor and the previews. The list is the Gradle plugin's, and `plan`
+# of it, the releases below the floor and the previews. The list is `gradle/tmux-lanes.json`, and `plan`
 # turns it into the matrix below.
 
 on:
@@ -59,9 +59,9 @@ permissions:
 
 jobs:
   plan:
-    # The lanes for this event, read from the plugin's lists. The plan also fails a dispatch that
-    # asks for something CI will not do before any runner is spent on it, and the tooling's own
-    # tests and drift check run here because they take seconds.
+    # The lanes for this event, read from the manifest. The plan also fails a dispatch that asks for
+    # something CI will not do before any runner is spent on it, and the drift check runs here
+    # because it takes seconds.
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -71,10 +71,13 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - name: The plan and the docs are sound
-        run: |
-          python3 -B -m unittest tools.ci.test_plan tools.ci.test_check
-          python3 -B -m tools.ci.check
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: '0.12.0'
+          enable-cache: false
+
+      - name: The docs and the workflows follow the lanes
+        run: uv run scripts/ci-check/ci_check.py
 
       - name: Plan the lanes
         id: plan
@@ -86,7 +89,7 @@ jobs:
           JDK: ${{ inputs.jdk }}
           TMATE: ${{ inputs.tmate }}
         run: |
-          python3 -B -m tools.ci.plan matrix \
+          uv run scripts/ci-plan/ci_plan.py matrix \
             --event "$EVENT" --ref-type "$REF_TYPE" --scope "$SCOPE" \
             --tmux-ref "$TMUX_REF" --jdk "$JDK" --tmate "$TMATE" \
             --github-output "$GITHUB_OUTPUT"
@@ -251,7 +254,7 @@ jobs:
           limit-access-to-actor: true
 
       # One lane rather than testTmuxMatrix: each version builds and runs on its own runner, so the
-      # lanes take the time of the slowest instead of the sum. A tmux the plugin's lists do not
+      # lanes take the time of the slowest instead of the sum. A tmux the manifest does not
       # name runs as the ad hoc lane, in the directory named for it.
       - name: Run the real-tmux suite
         env:
@@ -301,7 +304,12 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: '0.12.0'
+          enable-cache: false
+
       - name: Every planned lane succeeded
         env:
           NEEDS: ${{ toJSON(needs) }}
-        run: python3 -B -m tools.ci.plan verify --needs "$NEEDS"
+        run: uv run scripts/ci-plan/ci_plan.py verify --needs "$NEEDS"

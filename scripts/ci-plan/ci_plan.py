@@ -1,16 +1,22 @@
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.12"
+# dependencies = []
+# ///
 r"""Plan the tmux lanes of the tmux matrix from the build's own table and the event.
 
-The Gradle plugin `libtmux.tmux-matrix.gradle.kts` is the only list of tmux
-releases this project tests: `lanes` is the supported range, `previewLanes` runs
-ahead of it, `rejectionLanes` are the releases below the floor, and `clientLane`
-is the release that reaches their daemons. A push or pull request runs the first
-and last of `lanes`; the weekly schedule and a dispatch with `scope: full` run
-all of it; a dispatch with `scope: custom` runs the refs it names. Nothing here
-touches the network, so the same plan can be reproduced locally:
+`gradle/tmux-lanes.json` is the only list of tmux releases this project tests,
+and both this planner and the Gradle plugin `libtmux.tmux-matrix` read it:
+`lanes` is the supported range, `previewLanes` runs ahead of it,
+`rejectionLanes` are the releases below the floor, and `clientLane` is the
+release that reaches their daemons. A push or pull request runs the first and
+last of `lanes`; the weekly schedule and a dispatch with `scope: full` run all of
+it; a dispatch with `scope: custom` runs the refs it names. Nothing here touches
+the network, so the same plan can be reproduced locally:
 
-    python3 -m tools.ci.plan matrix --event push
-    python3 -m tools.ci.plan matrix --event workflow_dispatch --scope custom \
-        --tmux-ref 3.6b,master --tmate on-failure
+    uv run scripts/ci-plan/ci_plan.py matrix --event push
+    uv run scripts/ci-plan/ci_plan.py matrix --event workflow_dispatch \
+        --scope custom --tmux-ref 3.6b,master --tmate on-failure
 """
 
 from __future__ import annotations
@@ -20,19 +26,16 @@ import json
 import pathlib
 import re
 import sys
+from collections.abc import Mapping
 from typing import NamedTuple
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-PLUGIN = ROOT / "build-logic/conventions/src/main/kotlin/libtmux.tmux-matrix.gradle.kts"
+MANIFEST = ROOT / "gradle/tmux-lanes.json"
 
 REF_PATTERN = re.compile(r"[A-Za-z0-9._/-]{1,64}")
 SHA_PATTERN = re.compile(r"[0-9a-f]{40}")
 VERSION_PATTERN = re.compile(r"(\d+)\.(\d+)([a-z]?)")
 JDK_PATTERN = re.compile(r"\d{2}")
-LIST_DECLARATION = re.compile(
-    r"^val (lanes|previewLanes|rejectionLanes) = listOf\((.*)\)$", re.M
-)
-CLIENT_DECLARATION = re.compile(r'^val clientLane = "([^"]+)"$', re.M)
 
 SCOPES = ("edges", "full", "custom")
 TMATE_MODES = ("off", "before-tests", "on-failure")
@@ -103,19 +106,30 @@ def version_key(version: str) -> tuple[int, int, str]:
     return int(match[1]), int(match[2]), match[3]
 
 
-def parse_plugin(text: str) -> Manifest:
-    """Read the lane lists out of the Gradle plugin and check them."""
-    lists = {
-        name: tuple(re.findall(r'"([^"]+)"', body))
-        for name, body in LIST_DECLARATION.findall(text)
-    }
-    client = CLIENT_DECLARATION.search(text)
+def parse_manifest(text: str) -> Manifest:
+    """Read the lane lists out of the manifest and check them."""
+    try:
+        document = json.loads(text)
+    except json.JSONDecodeError as error:
+        message = f"the manifest is not JSON: {error}"
+        raise PlanError(message) from error
+    if not isinstance(document, dict):
+        message = "the manifest is not an object"
+        raise PlanError(message)
+    lists: dict[str, tuple[str, ...]] = {}
     for name in ("lanes", "previewLanes", "rejectionLanes"):
-        if not lists.get(name):
-            message = f"the plugin declares no `val {name} = listOf(...)` on one line"
+        value = document.get(name)
+        if (
+            not isinstance(value, list)
+            or not value
+            or not all(isinstance(item, str) for item in value)
+        ):
+            message = f"the manifest has no non-empty list of strings named {name!r}"
             raise PlanError(message)
-    if client is None:
-        message = 'the plugin declares no `val clientLane = "..."` on one line'
+        lists[name] = tuple(value)
+    client = document.get("clientLane")
+    if not isinstance(client, str) or not client:
+        message = "the manifest has no string named 'clientLane'"
         raise PlanError(message)
     lanes, preview, rejection = (
         lists["lanes"],
@@ -130,19 +144,19 @@ def parse_plugin(text: str) -> Manifest:
         if version_key(version) >= keys[0]:
             message = f"rejection lane {version} is not below the floor {lanes[0]}"
             raise PlanError(message)
-    if client[1] not in lanes:
-        message = f"the client {client[1]!r} must be one of the lanes"
+    if client not in lanes:
+        message = f"the client {client!r} must be one of the lanes"
         raise PlanError(message)
     for ref in preview:
         if REF_PATTERN.fullmatch(ref) is None or ref in (*lanes, *rejection):
             message = f"preview lane {ref!r} is malformed or already a lane"
             raise PlanError(message)
-    return Manifest(lanes, preview, rejection, client[1])
+    return Manifest(lanes, preview, rejection, client)
 
 
-def load_manifest(path: pathlib.Path = PLUGIN) -> Manifest:
-    """Read and check the plugin at `path`."""
-    return parse_plugin(path.read_text())
+def load_manifest(path: pathlib.Path = MANIFEST) -> Manifest:
+    """Read and check the manifest at `path`."""
+    return parse_manifest(path.read_text())
 
 
 def scope_for(event: str, ref_type: str, requested: str) -> str:
@@ -309,7 +323,7 @@ def expected_result(job: str) -> str:
     return "success" if job else "failure"
 
 
-def verify_needs(needs: dict[str, dict[str, object]]) -> list[str]:
+def verify_needs(needs: Mapping[str, Mapping[str, object]]) -> list[str]:
     """Return what is wrong with the results the aggregate job saw.
 
     Every job must have succeeded. The preview lanes are allowed to fail
@@ -331,7 +345,7 @@ def _summary(plan: Plan) -> str:
 
 def _run_matrix(args: argparse.Namespace) -> int:
     plan = make_plan(
-        load_manifest(args.plugin),
+        load_manifest(args.manifest),
         event=args.event,
         ref_type=args.ref_type,
         scope=args.scope,
@@ -366,7 +380,7 @@ def main(argv: list[str] | None = None) -> int:
     matrix.add_argument("--jdk", default="")
     matrix.add_argument("--tmate", default="")
     matrix.add_argument("--github-output", default="")
-    matrix.add_argument("--plugin", type=pathlib.Path, default=PLUGIN)
+    matrix.add_argument("--manifest", type=pathlib.Path, default=MANIFEST)
     matrix.set_defaults(handler=_run_matrix)
 
     verify = subparsers.add_parser("verify", help="check the aggregate job's needs")

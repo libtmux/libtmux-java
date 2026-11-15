@@ -5,7 +5,6 @@
 | tool | does |
 | --- | --- |
 | [`tmux-matrix.sh`](tmux-matrix.sh) | builds every supported tmux release into a tree the version matrix can use |
-| [`ci/`](ci/) | plans the tmux matrix from the build's lanes, and checks the docs and workflows against them |
 | [`reap-stale-servers.sh`](reap-stale-servers.sh) | reports and optionally ends tmux servers this port abandoned |
 | [`mcp-swap/`](mcp-swap/README.md) | points every installed agent CLI at this build of `libtmux-mcp`, and back |
 

@@ -8,20 +8,21 @@
 // Declared so the source-set accessors resolve; the module already has it via the library plugin.
 plugins { java }
 
-val lanes = listOf("3.3a", "3.4", "3.5", "3.6", "3.6a", "3.7", "3.7a", "3.7b", "3.7c")
+// The releases live in gradle/tmux-lanes.json, which the matrix workflow's planner reads too.
+// `lanes` is the supported range. `previewLanes` run ahead of it, may fail and stay out of the
+// README's claimed range. `rejectionLanes` are below the floor and run only the version check, which
+// must refuse every call; a client of `clientLane` reaches their daemons, because a client as old as
+// 3.0a or 3.1c only ever rejects `-N`.
+val manifest = groovy.json.JsonSlurper().parse(rootProject.file("gradle/tmux-lanes.json")) as Map<*, *>
 
-// Ahead of the supported range: previews of what tmux ships next, run so a break shows up before the
-// release that makes it real rather than after. Allowed to fail, and left out of testTmuxMatrix and
-// the README's claimed range on purpose — 3.8 is released but not yet in that range, and master is
-// upstream's development branch, not a version at all.
-val previewLanes = listOf("3.8", "master")
+fun lanesIn(key: String): List<String> =
+    (manifest[key] as? List<*>)?.map { it.toString() }?.takeIf { it.isNotEmpty() }
+        ?: error("gradle/tmux-lanes.json names no list called $key")
 
-// Below the floor: these run only the version check cases against the real binary, which must refuse
-// every call and leave a sentinel session, option and buffer as it was. They are part of the matrix
-// because a refusal that a fake alone vouches for is not one. Each is also a daemon reached by a
-// client of the first supported release: a client as old as 3.0a or 3.1c only ever rejects `-N`.
-val rejectionLanes = listOf("3.0a", "3.1c", "3.2a", "3.3")
-val clientLane = "3.3a"
+val lanes = lanesIn("lanes")
+val previewLanes = lanesIn("previewLanes")
+val rejectionLanes = lanesIn("rejectionLanes")
+val clientLane = manifest["clientLane"]?.toString() ?: error("gradle/tmux-lanes.json names no clientLane")
 
 val matrix = providers.gradleProperty("libtmuxMatrix")
 
