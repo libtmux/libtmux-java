@@ -26,6 +26,7 @@ exclude-newer = "3 days"
 # directory.
 pythonpath = [
   "scripts/build-tmux-matrix",
+  "scripts/lib",
   "scripts/ci-check",
   "scripts/check-tmux-build",
   "scripts/ci-plan",
@@ -51,6 +52,7 @@ target-version = "py312"
 line-length = 100
 src = [
   "scripts/build-tmux-matrix",
+  "scripts/lib",
   "scripts/ci-check",
   "scripts/check-tmux-build",
   "scripts/ci-plan",
@@ -68,6 +70,7 @@ extend-select = ["ANN", "B", "C4", "I", "PT", "PTH", "RUF", "SIM", "UP"]
 python-version = "3.12"
 extra-paths = [
   "scripts/build-tmux-matrix",
+  "scripts/lib",
   "scripts/ci-check",
   "scripts/check-tmux-build",
   "scripts/ci-plan",
