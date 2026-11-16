@@ -18,6 +18,9 @@ workflow calls one at a time:
 $ uv run scripts/release-checks/release_checks.py release-version --ref-name v0.1.2
 ```
 
+`gh run list` stops after 60 s, which is one API request, and a failure to list
+the runs refuses the release with a `::error::` annotation.
+
 A refused check prints a `::error::` annotation and exits 1. The tests call each
 decision, and `ci-passed` against a stand-in `gh`.
 

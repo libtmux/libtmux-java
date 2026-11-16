@@ -1,7 +1,5 @@
 """Prove the release decisions accept what the project publishes and refuse the rest."""
 
-from __future__ import annotations
-
 import os
 import pathlib
 import stat
@@ -127,3 +125,15 @@ def test_a_refused_version_is_status_1_and_writes_nothing(
 
     assert not output.exists()
     assert "::error::not a version this project publishes: next" in capsys.readouterr().err
+
+
+def test_a_gh_that_hangs_refuses_the_release_instead_of_holding_the_job(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    gh = tmp_path / "gh"
+    gh.write_text(f"#!{sys.executable}\nimport time\ntime.sleep(30)\n", encoding="utf-8")
+    gh.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{tmp_path}{os.pathsep}{os.environ['PATH']}")
+    monkeypatch.setattr(checks, "NETWORK_SECONDS", 0.3)
+    with pytest.raises(checks.ReleaseCheckError, match="cannot list the runs"):
+        checks.ci_passed("ci.yml", "abc123")

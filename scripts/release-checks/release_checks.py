@@ -13,8 +13,6 @@
     uv run scripts/release-checks/release_checks.py release-version --ref-name v0.1.2
 """
 
-from __future__ import annotations
-
 import argparse
 import json
 import os
@@ -25,9 +23,17 @@ import sys
 import uuid
 from collections.abc import Sequence
 
+# Importing a shared module must not leave a __pycache__ in the checkout.
+sys.dont_write_bytecode = True
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "lib"))
+
+import bounded
+
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 PUBLISHABLE = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta|milestone|rc)\.[0-9]+)?")
 PASSPHRASE_PROPERTY = "ORG_GRADLE_PROJECT_signingInMemoryKeyPassword"
+# Seconds `gh run list` may take: it is one API request.
+NETWORK_SECONDS = 60
 
 
 class ReleaseCheckError(Exception):
@@ -81,24 +87,29 @@ def ci_passed(workflow: str, commit: str) -> None:
     CI is not re-run for a release: a run still in progress, or never made for
     this commit, refuses it, and the release is started again once it has passed.
     """
-    listed = subprocess.run(
-        [
-            "gh",
-            "run",
-            "list",
-            "--workflow",
-            workflow,
-            "--commit",
-            commit,
-            "--limit",
-            "50",
-            "--json",
-            "conclusion",
-        ],
-        capture_output=True,
-        text=True,
-        check=True,
-    )
+    try:
+        listed = bounded.run(
+            [
+                "gh",
+                "run",
+                "list",
+                "--workflow",
+                workflow,
+                "--commit",
+                commit,
+                "--limit",
+                "50",
+                "--json",
+                "conclusion",
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=NETWORK_SECONDS,
+        )
+    except (OSError, subprocess.SubprocessError) as error:
+        message = f"::error::cannot list the runs of {workflow} for {commit}: {error}"
+        raise ReleaseCheckError(message) from error
     passed = sum(1 for run in json.loads(listed.stdout) if run.get("conclusion") == "success")
     if passed < 1:
         message = (
