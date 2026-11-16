@@ -1,0 +1,40 @@
+name: Workspace Python test runtime
+description: >-
+  A virtual environment with the tmuxp the workspace CLI's Python bridge needs, and the Python
+  libtmux it drives, for the tests that exercise the bridge. A venv keeps tmuxp off HOME:
+  `pip install --user` lands there, and the tests that need it replace HOME.
+
+runs:
+  using: composite
+  steps:
+    - name: Create the workspace Python environment
+      shell: bash
+      run: python3 -m venv "$RUNNER_TEMP/workspace-python"
+
+    - name: Install tmuxp 1.74.0 in it
+      shell: bash
+      run: $RUNNER_TEMP/workspace-python/bin/pip install tmuxp==1.74.0
+
+    - name: Create a repository for Python libtmux
+      shell: bash
+      run: git init --quiet "$RUNNER_TEMP/python-libtmux-core"
+
+    - name: Fetch the pinned Python libtmux
+      shell: bash
+      run: >-
+        git -C "$RUNNER_TEMP/python-libtmux-core" fetch --quiet --depth=1
+        https://github.com/tmux-python/libtmux.git 5df9cb3e89647577b7dd8484f844ffe1053129bb
+
+    - name: Check out the pinned Python libtmux
+      shell: bash
+      run: >-
+        git -C "$RUNNER_TEMP/python-libtmux-core" checkout --quiet --detach
+        5df9cb3e89647577b7dd8484f844ffe1053129bb
+
+    - name: Put Python libtmux on the Python path
+      shell: bash
+      run: echo "PYTHONPATH=$RUNNER_TEMP/python-libtmux-core/src" >> "$GITHUB_ENV"
+
+    - name: Point the workspace CLI tests at the workspace Python
+      shell: bash
+      run: echo "TMUX_WORKSPACE_TEST_PYTHON=$RUNNER_TEMP/workspace-python/bin/python" >> "$GITHUB_ENV"

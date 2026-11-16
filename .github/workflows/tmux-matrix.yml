@@ -113,6 +113,11 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: '0.12.0'
+          enable-cache: false
+
       # A release is pinned by checksum in the action; any other ref is resolved to the commit it
       # names. The action keys its cache on the runner image, so a build made on one image is not
       # restored onto another, and it rebuilds a restore that fails to start.
@@ -136,24 +141,7 @@ jobs:
           TMUX_REF: ${{ matrix.tmux }}
           VERIFY: ${{ matrix.verify }}
           CLIENT: ${{ matrix.client }}
-        run: |
-          check() {
-            reported="$("$HOME/tmux-builds/$1/bin/tmux" -V)"
-            echo "$2: $reported"
-            case "$3" in
-              release)
-                if [ "${reported#* }" != "$2" ]; then
-                  echo "::error::the $2 build reports $reported"
-                  exit 1
-                fi
-                ;;
-              development)
-                case "$reported" in "tmux next-"*) ;; *) echo "::error::$2 reports $reported"; exit 1 ;; esac
-                ;;
-            esac
-          }
-          check "$SLUG" "$TMUX_REF" "$VERIFY"
-          if [ -n "$CLIENT" ]; then check "$CLIENT" "$CLIENT" release; fi
+        run: uv run scripts/check-tmux-build/check_tmux_build.py --slug "$SLUG" --ref "$TMUX_REF" --verify "$VERIFY" --client "$CLIENT"
 
       - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6
         with:
@@ -164,19 +152,8 @@ jobs:
         with:
           validate-wrappers: true
 
-      # A venv keeps tmuxp off HOME: `pip install --user` lands there, and the
-      # tests that need it replace HOME.
       - name: Install the optional workspace Python test runtime
-        run: |
-          python3 -m venv "$RUNNER_TEMP/workspace-python"
-          "$RUNNER_TEMP/workspace-python/bin/python" -m pip install 'tmuxp==1.74.0'
-          git init --quiet "$RUNNER_TEMP/python-libtmux-core"
-          git -C "$RUNNER_TEMP/python-libtmux-core" fetch --quiet --depth=1 \
-            https://github.com/tmux-python/libtmux.git 5df9cb3e89647577b7dd8484f844ffe1053129bb
-          git -C "$RUNNER_TEMP/python-libtmux-core" checkout --quiet --detach \
-            5df9cb3e89647577b7dd8484f844ffe1053129bb
-          echo "PYTHONPATH=$RUNNER_TEMP/python-libtmux-core/src" >> "$GITHUB_ENV"
-          echo "TMUX_WORKSPACE_TEST_PYTHON=$RUNNER_TEMP/workspace-python/bin/python" >> "$GITHUB_ENV"
+        uses: ./.github/actions/workspace-python
 
       # Pinned by commit: v3.24, https://github.com/mxschmitt/action-tmate/commit/35b54af.
       # Only a dispatch gets here, and the plan allows one lane to.
@@ -190,15 +167,23 @@ jobs:
       # One lane rather than testTmuxMatrix: each version builds and runs on its own runner, so the
       # lanes take the time of the slowest instead of the sum. A tmux the manifest does not
       # name runs as the ad hoc lane, in the directory named for it.
+      # One lane rather than testTmuxMatrix: each version builds and runs on its own runner, so the
+      # lanes take the time of the slowest instead of the sum.
       - name: Run the real-tmux suite
+        if: ${{ matrix.adhoc == '' }}
         env:
           TASK: ${{ matrix.task }}
-          ADHOC: ${{ matrix.adhoc }}
           JDK: ${{ matrix.jdk }}
-        run: |
-          args=(-PlibtmuxMatrix="$HOME/tmux-builds" "-Plibtmux.testJdk=$JDK")
-          if [ -n "$ADHOC" ]; then args+=("-PlibtmuxAdHoc=$ADHOC"); fi
-          ./gradlew "$TASK" "${args[@]}" --stacktrace
+        run: ./gradlew "$TASK" "-PlibtmuxMatrix=$HOME/tmux-builds" "-Plibtmux.testJdk=$JDK" --stacktrace
+
+      # A tmux the manifest does not name runs as the ad hoc lane, in the directory named for it.
+      - name: Run the ad hoc real-tmux suite
+        if: ${{ matrix.adhoc != '' }}
+        env:
+          TASK: ${{ matrix.task }}
+          JDK: ${{ matrix.jdk }}
+          ADHOC: ${{ matrix.adhoc }}
+        run: ./gradlew "$TASK" "-PlibtmuxMatrix=$HOME/tmux-builds" "-Plibtmux.testJdk=$JDK" "-PlibtmuxAdHoc=$ADHOC" --stacktrace
 
       - name: Debug session after a failure
         if: failure() && github.event_name == 'workflow_dispatch' && matrix.tmate == 'on-failure'
@@ -209,14 +194,7 @@ jobs:
 
       - name: No tmux server outlived the suite
         if: always()
-        run: |
-          left="$(pgrep -c tmux || true)"
-          if [ "${left:-0}" -ne 0 ]; then
-            echo "::error::$left tmux server(s) survived the suite"
-            for p in $(pgrep tmux); do tr '\0' ' ' < "/proc/$p/cmdline"; echo; done
-            exit 1
-          fi
-          echo "no tmux server survived the suite"
+        run: uv run scripts/no-tmux-survivors/no_tmux_survivors.py
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: failure()

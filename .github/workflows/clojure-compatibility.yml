@@ -25,6 +25,11 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: '0.12.0'
+          enable-cache: false
+
       - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6
         with:
           distribution: temurin
@@ -46,14 +51,7 @@ jobs:
 
       - name: No tmux server outlived the suite
         if: always()
-        run: |
-          left="$(pgrep -c tmux || true)"
-          if [ "${left:-0}" -ne 0 ]; then
-            echo "::error::$left tmux server(s) survived the suite"
-            for p in $(pgrep tmux); do tr '\0' ' ' < "/proc/$p/cmdline"; echo; done
-            exit 1
-          fi
-          echo "no tmux server survived the suite"
+        run: uv run scripts/no-tmux-survivors/no_tmux_survivors.py
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: failure()
@@ -73,6 +71,11 @@ jobs:
         tmux: ['3.3a', '3.8']
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: '0.12.0'
+          enable-cache: false
 
       - name: Build tmux ${{ matrix.tmux }}
         uses: libtmux/.github/actions/build-tmux@30f81842b1e639ea4e25f93f1f2543504178e228
@@ -107,14 +110,7 @@ jobs:
 
       - name: No tmux server outlived the suite
         if: always()
-        run: |
-          left="$(pgrep -c tmux || true)"
-          if [ "${left:-0}" -ne 0 ]; then
-            echo "::error::$left tmux server(s) survived the suite"
-            for p in $(pgrep tmux); do tr '\0' ' ' < "/proc/$p/cmdline"; echo; done
-            exit 1
-          fi
-          echo "no tmux server survived the suite"
+        run: uv run scripts/no-tmux-survivors/no_tmux_survivors.py
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: failure()
@@ -135,6 +131,11 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: '0.12.0'
+          enable-cache: false
+
       - name: Build tmux dependencies
         run: brew install libevent ncurses jemalloc bison pkg-config
 
@@ -149,29 +150,18 @@ jobs:
         if: steps.tmux-cache.outputs.cache-hit != 'true'
         env:
           LANE: ${{ matrix.tmux }}
-        run: |
-          set -eux
-          work="$(mktemp -d)"
-          curl -fsSL -o "$work/tmux.tar.gz" \
-            "https://github.com/tmux/tmux/releases/download/$LANE/tmux-$LANE.tar.gz"
-          tar -xzf "$work/tmux.tar.gz" -C "$work"
-          cd "$work/tmux-$LANE"
-          libevent_prefix="$(brew --prefix libevent)"
-          ncurses_prefix="$(brew --prefix ncurses)"
-          jemalloc_prefix="$(brew --prefix jemalloc)"
-          export PKG_CONFIG_PATH="$libevent_prefix/lib/pkgconfig:$ncurses_prefix/lib/pkgconfig:$jemalloc_prefix/lib/pkgconfig"
-          export CPPFLAGS="-I$ncurses_prefix/include"
-          export LDFLAGS="-L$ncurses_prefix/lib"
-          ./configure --prefix="$HOME/tmux-builds/$LANE" --disable-utf8proc
-          make -j"$(sysctl -n hw.logicalcpu)"
-          make install
+        run: uv run scripts/build-tmux-matrix/build_tmux_matrix.py ~/tmux-builds --only "$LANE"
 
       - name: The lane runs the tmux it is named after
         env:
           LANE: ${{ matrix.tmux }}
-        run: |
+        run: >-
           "$HOME/tmux-builds/$LANE/bin/tmux" -V
-          echo "$HOME/tmux-builds/$LANE/bin" >> "$GITHUB_PATH"
+
+      - name: Put the lane's tmux on the path
+        env:
+          LANE: ${{ matrix.tmux }}
+        run: echo "$HOME/tmux-builds/$LANE/bin" >> "$GITHUB_PATH"
 
       - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6
         with:
@@ -196,14 +186,7 @@ jobs:
 
       - name: No tmux server outlived the suite
         if: always()
-        run: |
-          left="$(pgrep -c tmux || true)"
-          if [ "${left:-0}" -ne 0 ]; then
-            echo "::error::$left tmux server(s) survived the suite"
-            for p in $(pgrep tmux); do ps -o command= -p "$p"; done
-            exit 1
-          fi
-          echo "no tmux server survived the suite"
+        run: uv run scripts/no-tmux-survivors/no_tmux_survivors.py
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: failure()

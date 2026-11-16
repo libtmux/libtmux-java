@@ -75,19 +75,13 @@ jobs:
           # the ones Gradle published rather than trusted because it is committed here.
           validate-wrappers: true
 
-      # A venv keeps tmuxp off HOME: `pip install --user` lands there, and the
-      # tests that need it replace HOME.
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: '0.12.0'
+          enable-cache: false
+
       - name: Install the optional workspace Python test runtime
-        run: |
-          python3 -m venv "$RUNNER_TEMP/workspace-python"
-          "$RUNNER_TEMP/workspace-python/bin/python" -m pip install 'tmuxp==1.74.0'
-          git init --quiet "$RUNNER_TEMP/python-libtmux-core"
-          git -C "$RUNNER_TEMP/python-libtmux-core" fetch --quiet --depth=1 \
-            https://github.com/tmux-python/libtmux.git 5df9cb3e89647577b7dd8484f844ffe1053129bb
-          git -C "$RUNNER_TEMP/python-libtmux-core" checkout --quiet --detach \
-            5df9cb3e89647577b7dd8484f844ffe1053129bb
-          echo "PYTHONPATH=$RUNNER_TEMP/python-libtmux-core/src" >> "$GITHUB_ENV"
-          echo "TMUX_WORKSPACE_TEST_PYTHON=$RUNNER_TEMP/workspace-python/bin/python" >> "$GITHUB_ENV"
+        uses: ./.github/actions/workspace-python
 
       # Continue past failures so one run names each failed check.
       # Clojure's live suite runs in its endpoint-only compatibility workflow.
@@ -101,16 +95,7 @@ jobs:
       # question gets asked for free.
       - name: No tmux server outlived the suite
         if: always()
-        run: |
-          if pids="$(pgrep tmux)"; then
-            echo "::error::tmux processes survived the suite"
-            for pid in $pids; do ps -o command= -p "$pid" || true; done
-            exit 1
-          else
-            status=$?
-            if [ "$status" -ne 1 ]; then exit "$status"; fi
-          fi
-          echo "no tmux server survived the suite"
+        run: uv run scripts/no-tmux-survivors/no_tmux_survivors.py
 
       - name: Publish to a local repository
         run: ./gradlew publishToMavenLocal --stacktrace
@@ -195,9 +180,7 @@ jobs:
           enable-cache: false
 
       - name: Work out the version a release would publish
-        run: |
-          version="$(sed -n 's/^libtmuxVersion=//p' gradle.properties)"
-          echo "VERSION=${version%-SNAPSHOT}" >> "$GITHUB_ENV"
+        run: uv run scripts/release-checks/release_checks.py staged-version
 
       - name: Make a signing key for this run
         run: |
@@ -213,10 +196,17 @@ jobs:
       - name: The staged release is what Central accepts
         run: uv run scripts/verify-staged-release/verify_staged_release.py "$VERSION"
 
-      - name: Builds of their own resolve the staged release
-        run: |
-          ./gradlew -p module-tests/java run --stacktrace -PlibtmuxVersion="$VERSION"
-          ./gradlew -p module-tests/kotlin run --stacktrace -PlibtmuxVersion="$VERSION"
-          ./gradlew -p module-tests/scala run --stacktrace -PlibtmuxVersion="$VERSION"
-          module-tests/sbt/sbtw -Dlibtmux.version="$VERSION" core/run cats/run ox/run direct/run
-          ./gradlew -p module-tests/cli run --stacktrace -PlibtmuxVersion="$VERSION"
+      - name: The Java build resolves the staged release
+        run: ./gradlew -p module-tests/java run --stacktrace -PlibtmuxVersion="$VERSION"
+
+      - name: The Kotlin build resolves the staged release
+        run: ./gradlew -p module-tests/kotlin run --stacktrace -PlibtmuxVersion="$VERSION"
+
+      - name: The Scala build resolves the staged release
+        run: ./gradlew -p module-tests/scala run --stacktrace -PlibtmuxVersion="$VERSION"
+
+      - name: The sbt build resolves the staged release
+        run: module-tests/sbt/sbtw -Dlibtmux.version="$VERSION" core/run cats/run ox/run direct/run
+
+      - name: The CLI build resolves the staged release
+        run: ./gradlew -p module-tests/cli run --stacktrace -PlibtmuxVersion="$VERSION"

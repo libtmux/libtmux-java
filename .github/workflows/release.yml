@@ -52,6 +52,11 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: '0.12.0'
+          enable-cache: false
+
       # This job checks on one JDK and one tmux. The commit is released on what it proved everywhere:
       # CI on JDK 25 and 27 for exactly this commit, and every supported tmux lane, which the job
       # above ran. CI is not re-run here: a run still in progress, or never made for this commit,
@@ -60,14 +65,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-        run: |
-          passed=$(gh run list --workflow ci.yml --commit "$GITHUB_SHA" --limit 50 \
-            --json conclusion --jq 'map(select(.conclusion == "success")) | length')
-          if [ "$passed" -lt 1 ]; then
-            echo "::error::ci.yml has no successful run for $GITHUB_SHA; let it pass, then release again"
-            exit 1
-          fi
-          echo "ci.yml passed on $GITHUB_SHA"
+        run: uv run scripts/release-checks/release_checks.py ci-passed
 
       - name: Install tmux
         uses: libtmux/.github/actions/apt-get@30f81842b1e639ea4e25f93f1f2543504178e228
@@ -91,25 +89,7 @@ jobs:
         env:
           REF_NAME: ${{ github.ref_name }}
           INPUT_VERSION: ${{ inputs.version }}
-        run: |
-          if [ -n "$INPUT_VERSION" ]; then
-            version="$INPUT_VERSION"
-          else
-            version="${REF_NAME#v}"
-          fi
-          # Validated rather than trusted. This value reaches a command line, and a tag name is
-          # whatever the person pushing the tag typed; anything outside this shape is not a version
-          # this project publishes. It also catches the spellings Maven orders wrongly — see
-          # RELEASING.md for why 0.0.1-a.1 sorts after 0.0.1.
-          case "$version" in
-            *-SNAPSHOT) echo "::error::refusing to release a snapshot: $version"; exit 1 ;;
-          esac
-          printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta|milestone|rc)\.[0-9]+)?$' || {
-            echo "::error::not a version this project publishes: $version"
-            exit 1
-          }
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "releasing $version"
+        run: uv run scripts/release-checks/release_checks.py release-version
 
       # The gate runs before anything is uploaded. A deployment can be dropped, but a broken one
       # should never get as far as needing to be.
@@ -124,13 +104,7 @@ jobs:
       - name: Carry the passphrase only if the key has one
         env:
           PASSPHRASE: ${{ secrets.SIGNING_PASSWORD }}
-        run: |
-          if [ -n "$PASSPHRASE" ]; then
-            echo "ORG_GRADLE_PROJECT_signingInMemoryKeyPassword=$PASSPHRASE" >> "$GITHUB_ENV"
-            echo "signing key has a passphrase"
-          else
-            echo "signing key has no passphrase"
-          fi
+        run: uv run scripts/release-checks/release_checks.py carry-passphrase
 
       - name: Publish to the Central Portal
         env:
