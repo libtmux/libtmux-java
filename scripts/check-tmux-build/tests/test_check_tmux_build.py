@@ -1,7 +1,5 @@
 """Prove a lane fails when the tmux it built is not the one it is named after."""
 
-from __future__ import annotations
-
 import pathlib
 import stat
 import sys
@@ -90,3 +88,15 @@ def test_an_empty_verify_mode_only_prints(
     assert build.main(["--slug", "abc123", "--ref", "abc123", "--verify", "", "--client", ""]) == 0
 
     assert capsys.readouterr().out == "abc123: tmux 3.9-rc\n"
+
+
+def test_a_tmux_that_hangs_on_its_version_fails_the_lane(
+    builds: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    binary = builds / "3.8" / "bin" / "tmux"
+    binary.parent.mkdir(parents=True)
+    binary.write_text(f"#!{sys.executable}\nimport time\ntime.sleep(30)\n", encoding="utf-8")
+    binary.chmod(binary.stat().st_mode | stat.S_IXUSR)
+    monkeypatch.setattr(build.bounded, "PROBE", 0.3)
+    assert build.check("3.8", "3.8", "release") is False
+    assert "::error::cannot read the version of the 3.8 build" in capsys.readouterr().out

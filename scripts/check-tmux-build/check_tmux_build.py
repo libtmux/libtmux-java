@@ -5,9 +5,9 @@
 # ///
 """Check that the tmux a lane built is the one it is named after.
 
-The `build-tmux` action can restore a cached build, so a lane that silently runs
-another release proves nothing about the one it names. The matrix builds each
-release under `~/tmux-builds/<slug>`; this reads the version that build reports:
+The `build-tmux` action validates a restored build before it uses it. This runs
+after the action and checks the wiring around it: the matrix builds each release
+under `~/tmux-builds/<slug>`, and this reads the version that build reports:
 
     uv run scripts/check-tmux-build/check_tmux_build.py \
         --slug 3.8 --ref 3.8 --verify release
@@ -18,13 +18,17 @@ build, such as the one that reaches the daemons of a release below the floor, is
 checked as a release of its own with `--client`.
 """
 
-from __future__ import annotations
-
 import argparse
 import pathlib
 import subprocess
 import sys
 from collections.abc import Sequence
+
+# Importing a shared module must not leave a __pycache__ in the checkout.
+sys.dont_write_bytecode = True
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "lib"))
+
+import bounded
 
 BUILDS = pathlib.Path.home() / "tmux-builds"
 MODES = ("release", "development", "none")
@@ -33,7 +37,13 @@ MODES = ("release", "development", "none")
 def reported_version(slug: str, builds: pathlib.Path | None = None) -> str:
     """Return what the tmux built under `slug` prints for `-V`."""
     binary = (builds or BUILDS) / slug / "bin" / "tmux"
-    done = subprocess.run([str(binary), "-V"], capture_output=True, text=True, check=True)
+    done = bounded.run(
+        [str(binary), "-V"],
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=bounded.PROBE,
+    )
     return done.stdout.strip()
 
 
@@ -56,7 +66,11 @@ def mismatch(reference: str, reported: str, mode: str) -> str | None:
 
 def check(slug: str, reference: str, mode: str, builds: pathlib.Path | None = None) -> bool:
     """Print what a build reports, and say whether it is the one its lane names."""
-    reported = reported_version(slug, builds)
+    try:
+        reported = reported_version(slug, builds)
+    except (OSError, subprocess.SubprocessError) as error:
+        print(f"::error::cannot read the version of the {slug} build: {error}")
+        return False
     print(f"{reference}: {reported}")
     problem = mismatch(reference, reported, mode)
     if problem is not None:
