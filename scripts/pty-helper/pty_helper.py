@@ -1,9 +1,8 @@
 """Read from and wait on a child that writes to a pseudo-terminal.
 
 The Java tests drive terminal programs with the two functions below. The
-programs `ProcessTest` runs import this module. `NativeClient` puts the text of
-this file ahead of its program, so the imports below are the ones that program
-relies on.
+programs `ProcessTest` runs and the driver `NativeClient` runs import this
+module.
 """
 
 import errno

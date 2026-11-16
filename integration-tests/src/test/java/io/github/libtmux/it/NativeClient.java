@@ -6,7 +6,6 @@ import io.github.libtmux.Session;
 import io.github.libtmux.internal.CommandStrings;
 import io.github.libtmux.internal.ProcessTree;
 import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -19,76 +18,55 @@ import java.util.stream.Collectors;
 
 /** Owns an ordinary terminal client for a local test server. */
 final class NativeClient implements AutoCloseable {
-    private static final String DRIVER = helper() + """
-            import fcntl, pty, signal, sys, termios
-            master, slave = pty.openpty()
-            os.set_blocking(master, False)
-            def terminal():
-                os.setsid()
-                fcntl.ioctl(slave, termios.TIOCSCTTY, 0)
-            signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
-            child = None
-            trace = bytearray()
-            try:
-                child = subprocess.Popen(sys.argv[1:], stdin=slave, stdout=slave,
-                    stderr=slave, env=dict(os.environ, TERM='xterm'), preexec_fn=terminal)
-                os.close(slave)
-                slave = None
-                while child.poll() is None:
-                    chunk = drain_pty(master)
-                    trace.extend(chunk[:max(0, 65536-len(trace))])
-                    if 0 in select.select([0, master], [], [], .025)[0]:
-                        data = os.read(0, 65536)
-                        if not data: break
-                        os.write(master, data)
-            finally:
-                if child is not None:
-                    if child.poll() is None: child.terminate()
-                    try: wait_pty(child, master, 2)
-                    except subprocess.TimeoutExpired:
-                        child.kill()
-                        wait_pty(child, master, 2)
-                    if child.returncode not in (0, -signal.SIGTERM):
-                        sys.stderr.buffer.write(trace)
-                if slave is not None: os.close(slave)
-                os.close(master)
-            """;
+    /** The Python program that gives the client a terminal; a checked file under the test resources. */
+    private static final String DRIVER = "/io/github/libtmux/it/ordinary_client.py";
+
+    /** The module the driver imports, which the build copies from {@code scripts/pty-helper}. */
+    private static final String HELPER = "/io/github/libtmux/fixtures/pty_helper.py";
+
     private final Server server;
     private final Process process;
     private final ProcessTree tree;
+    private final Path programs;
     private final Path log;
     private String name = "";
 
-    private NativeClient(Server server, Process process, Path log) {
+    private NativeClient(Server server, Process process, Path programs, Path log) {
         this.server = server;
         this.process = process;
         this.tree = new ProcessTree(process);
+        this.programs = programs;
         this.log = log;
     }
 
     static NativeClient attach(Session session) throws Exception {
         Server server = session.server();
         Set<String> before = server.clients().stream().map(Client::name).collect(Collectors.toSet());
-        Path log = Files.createTempFile(Path.of(System.getProperty("java.io.tmpdir")), "ordinary-client-", ".log");
-        List<String> command = new ArrayList<>(List.of("python3", "-u", "-c", DRIVER));
-        command.addAll(server.config().endpointCommand());
-        command.addAll(List.of("attach-session", "-t", session.id().value()));
-        ProcessBuilder builder =
-                new ProcessBuilder(command).redirectErrorStream(true).redirectOutput(log.toFile());
-        builder.environment().remove("TMUX");
-        builder.environment().remove("TMUX_PANE");
+        Path programs = Files.createTempDirectory(Path.of(System.getProperty("java.io.tmpdir")), "ordinary-client-");
+        Path log = programs.resolve("client.log");
         Process process;
         try {
+            Path driver = copyResource(DRIVER, programs);
+            copyResource(HELPER, programs);
+            List<String> command = new ArrayList<>(List.of("python3", "-u", driver.toString()));
+            command.addAll(server.config().endpointCommand());
+            command.addAll(List.of("attach-session", "-t", session.id().value()));
+            ProcessBuilder builder =
+                    new ProcessBuilder(command).redirectErrorStream(true).redirectOutput(log.toFile());
+            builder.environment().remove("TMUX");
+            builder.environment().remove("TMUX_PANE");
+            // The helper is imported, so Python would otherwise leave a __pycache__ in the directory.
+            builder.environment().put("PYTHONDONTWRITEBYTECODE", "1");
             process = builder.start();
-        } catch (IOException failure) {
+        } catch (IOException | RuntimeException failure) {
             try {
-                Files.deleteIfExists(log);
+                deleteTree(programs);
             } catch (IOException cleanup) {
                 failure.addSuppressed(cleanup);
             }
             throw failure;
         }
-        NativeClient client = new NativeClient(server, process, log);
+        NativeClient client = new NativeClient(server, process, programs, log);
         try {
             if (!Await.until(() -> !client.process.isAlive()
                             || server.clients().stream().anyMatch(seen -> !before.contains(seen.name())))
@@ -146,15 +124,26 @@ final class NativeClient implements AutoCloseable {
         }
         if (!reclaimed) throw new IOException("ordinary client process tree survived");
         if (process.exitValue() != 0) throw new IOException("ordinary client failed: " + Files.readString(log));
-        Files.deleteIfExists(log);
+        deleteTree(programs);
     }
 
-    private static String helper() {
-        try (var source = NativeClient.class.getResourceAsStream("/io/github/libtmux/fixtures/pty_helper.py")) {
-            if (source == null) throw new IllegalStateException("missing PTY test helper");
-            return new String(source.readAllBytes(), StandardCharsets.UTF_8);
-        } catch (IOException failure) {
-            throw new UncheckedIOException(failure);
+    /**
+     * Copies a Python program from the test resources into {@code directory}: Python puts a script's own
+     * directory on its import path, so the driver finds {@code pty_helper} beside it.
+     */
+    private static Path copyResource(String resource, Path directory) throws IOException {
+        try (var source = NativeClient.class.getResourceAsStream(resource)) {
+            if (source == null) throw new IllegalStateException("missing test resource " + resource);
+            Path target = directory.resolve(resource.substring(resource.lastIndexOf('/') + 1));
+            Files.copy(source, target);
+            return target;
         }
+    }
+
+    private static void deleteTree(Path directory) throws IOException {
+        try (var entries = Files.newDirectoryStream(directory)) {
+            for (Path entry : entries) Files.deleteIfExists(entry);
+        }
+        Files.deleteIfExists(directory);
     }
 }

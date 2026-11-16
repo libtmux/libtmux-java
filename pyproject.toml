@@ -73,4 +73,5 @@ extra-paths = [
 include = [
   "scripts",
   "libtmux-workspace-cli/src/test/resources",
+  "integration-tests/src/test/resources",
 ]

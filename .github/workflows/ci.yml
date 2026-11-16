@@ -137,13 +137,32 @@ jobs:
           version: '0.12.0'
           enable-cache: false
 
-      - name: Format, lint, type check and test the scripts
-        run: |
-          uv sync --locked
-          uv run --locked ruff format --check scripts libtmux-workspace-cli/src/test/resources
-          uv run --locked ruff check scripts libtmux-workspace-cli/src/test/resources
-          uv run --locked ty check scripts libtmux-workspace-cli/src/test/resources
-          uv run --locked pytest scripts
+      - name: Install the pinned script tools
+        run: uv sync --locked
+
+      - name: Check script formatting
+        run: >-
+          uv run --locked ruff format --check
+          scripts
+          libtmux-workspace-cli/src/test/resources
+          integration-tests/src/test/resources
+
+      - name: Lint the scripts
+        run: >-
+          uv run --locked ruff check
+          scripts
+          libtmux-workspace-cli/src/test/resources
+          integration-tests/src/test/resources
+
+      - name: Type check the scripts
+        run: >-
+          uv run --locked ty check
+          scripts
+          libtmux-workspace-cli/src/test/resources
+          integration-tests/src/test/resources
+
+      - name: Test the scripts
+        run: uv run --locked pytest scripts
 
   # A release without the upload: the version a tag would publish, signed by a key made for this run,
   # checked against what the Central Portal refuses, then resolved by builds of their own that see
