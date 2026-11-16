@@ -90,9 +90,8 @@ jobs:
           -Plibtmux.testJdk=${{ matrix.java }}
           -x :integration-tests:clojureIntegrationTest
 
-      # A real-tmux suite that leaves servers running would be invisible here and expensive on a
-      # developer's machine. The runner is discarded either way, so this is the only place the
-      # question gets asked for free.
+      # A real-tmux suite that leaves servers running goes unnoticed here, because the runner is
+      # discarded after the job, and costs memory on a developer's machine.
       - name: No tmux server outlived the suite
         if: always()
         run: uv run scripts/no-tmux-survivors/no_tmux_survivors.py

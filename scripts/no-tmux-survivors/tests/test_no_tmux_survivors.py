@@ -1,7 +1,5 @@
 """Prove a surviving tmux server fails the run and a clean machine passes it."""
 
-from __future__ import annotations
-
 import os
 import pathlib
 import stat
@@ -74,3 +72,13 @@ def test_the_command_runs_as_a_program(commands: pathlib.Path) -> None:
     )
 
     assert (done.returncode, done.stdout) == (0, "no tmux server survived the suite\n")
+
+
+def test_a_pgrep_that_hangs_fails_the_run_instead_of_holding_the_job(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    stand_in(tmp_path, "pgrep", "import time\ntime.sleep(30)\n")
+    monkeypatch.setenv("PATH", f"{tmp_path}{os.pathsep}{os.environ['PATH']}")
+    monkeypatch.setattr(survivors.bounded, "PROBE", 0.3)
+    assert survivors.main([]) == 1
+    assert "cannot look for tmux servers" in capsys.readouterr().err
