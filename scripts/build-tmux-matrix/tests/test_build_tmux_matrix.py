@@ -6,8 +6,6 @@ tree runs offline. The stand-ins are Python programs; `make` runs the install
 recipe, which only copies a file.
 """
 
-from __future__ import annotations
-
 import hashlib
 import io
 import json
@@ -290,3 +288,14 @@ def test_linux_builds_in_the_ambient_environment(monkeypatch: pytest.MonkeyPatch
 
     assert builder.build_environment() == dict(os.environ)
     assert builder.configure_arguments(Path("/p")) == ["--prefix=/p"]
+
+
+def test_a_built_tmux_that_hangs_on_its_version_is_a_build_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    binary = tmp_path / "tmux"
+    binary.write_text(f"#!{sys.executable}\nimport time\ntime.sleep(30)\n", encoding="utf-8")
+    binary.chmod(0o755)
+    monkeypatch.setattr(builder.bounded, "PROBE", 0.3)
+    with pytest.raises(builder.BuildError, match="cannot read the version"):
+        builder.version_of(binary)

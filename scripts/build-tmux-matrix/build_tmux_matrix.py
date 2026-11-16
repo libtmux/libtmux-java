@@ -23,8 +23,6 @@ Each archive is checked against the SHA256 that the `build-tmux` action of
 pins, so a build here starts from the bytes CI starts from.
 """
 
-from __future__ import annotations
-
 import argparse
 import hashlib
 import json
@@ -38,6 +36,12 @@ import tempfile
 import urllib.request
 from pathlib import Path
 
+# Importing a shared module must not leave a __pycache__ in the checkout.
+sys.dont_write_bytecode = True
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
+
+import bounded
+
 ROOT = Path(__file__).resolve().parents[2]
 MANIFEST = ROOT / "gradle/tmux-lanes.json"
 WORKFLOW = ROOT / ".github/workflows/tmux-matrix.yml"
@@ -50,8 +54,8 @@ SHARED_ACTION_PIN = re.compile(r"libtmux/\.github/actions/build-tmux@([0-9a-f]{4
 DEFAULT_DESTINATION = Path("~/tmux-builds")
 # A stalled connection ends the download; the limit is per socket operation.
 DOWNLOAD_TIMEOUT_SECONDS = 60.0
-# One configure or make step. Building tmux 3.3a took 8.5 s to configure and 6.3 s
-# to make here, so this only ends a step that has stopped making progress.
+# One configure or make step. The limit only ends a step that has stopped making
+# progress.
 STEP_TIMEOUT_SECONDS = 300.0
 
 
@@ -158,12 +162,20 @@ def homebrew_environment() -> dict[str, str]:
     path, so each is named through pkg-config, and ncurses also by include and
     library directory.
     """
-    prefixes = {
-        formula: subprocess.run(
-            ["brew", "--prefix", formula], capture_output=True, text=True, check=True
-        ).stdout.strip()
-        for formula in ("libevent", "ncurses", "jemalloc")
-    }
+    try:
+        prefixes = {
+            formula: bounded.run(
+                ["brew", "--prefix", formula],
+                capture_output=True,
+                text=True,
+                check=True,
+                timeout=bounded.PROBE,
+            ).stdout.strip()
+            for formula in ("libevent", "ncurses", "jemalloc")
+        }
+    except (OSError, subprocess.SubprocessError) as error:
+        message = f"cannot find Homebrew's libraries: {error}"
+        raise BuildError(message) from error
     return {
         **os.environ,
         "PKG_CONFIG_PATH": ":".join(f"{prefix}/lib/pkgconfig" for prefix in prefixes.values()),
@@ -186,13 +198,12 @@ def configure_arguments(prefix: Path) -> list[str]:
 def run(command: list[str], cwd: Path, env: dict[str, str] | None = None) -> None:
     """Run a build step, hiding its output unless it fails."""
     try:
-        done = subprocess.run(
+        done = bounded.run(
             command,
             cwd=cwd,
             env=env,
             capture_output=True,
             text=True,
-            check=False,
             timeout=STEP_TIMEOUT_SECONDS,
         )
     except subprocess.TimeoutExpired as error:
@@ -229,7 +240,17 @@ def build(release: str, destination: Path, digests: dict[str, str], base: str = 
 
 def version_of(binary: Path) -> str:
     """Return what a built tmux reports for `-V`."""
-    done = subprocess.run([str(binary), "-V"], capture_output=True, text=True, check=True)
+    try:
+        done = bounded.run(
+            [str(binary), "-V"],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=bounded.PROBE,
+        )
+    except (OSError, subprocess.SubprocessError) as error:
+        message = f"cannot read the version of {binary}: {error}"
+        raise BuildError(message) from error
     return done.stdout.strip()
 
 
@@ -282,7 +303,11 @@ def main(argv: list[str] | None = None) -> int:
             return 1
     print()
     for release in releases:
-        print(f"{release:<6} {version_of(destination / release / 'bin' / 'tmux')}")
+        try:
+            print(f"{release:<6} {version_of(destination / release / 'bin' / 'tmux')}")
+        except BuildError as error:
+            print(error, file=sys.stderr)
+            return 1
     print()
     print(f"./gradlew testTmuxMatrix -PlibtmuxMatrix={destination}")
     return 0

@@ -41,6 +41,11 @@ Building needs a C compiler, `make`, `libevent` and `ncurses` headers, and
 $ ./gradlew testTmuxMatrix -PlibtmuxMatrix=~/tmux-builds
 ```
 
+Every external command has a time limit that also stops what it started: 300 s
+for a `configure` or `make` step, 60 s for a download, per socket operation, and
+10 s for `tmux -V` and `brew --prefix`. A hung step fails the build with its
+command line. [bounded](../lib/README.md) records what the limits sit above.
+
 The tests stand in a small source archive for tmux, so they run offline:
 
 ```console
