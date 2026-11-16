@@ -50,5 +50,9 @@ inline (PEP 723) and run scripts with `uv run`.
   formats, compiles with Error Prone and tests like a library module, so it adds
   no second build system, and it keeps a transaction and recovery contract that
   its own suite covers. A Python copy would be a second implementation of that
-  contract. A tool of this size is a module, not a script. CONTRIBUTING names
-  the maintainer task that runs it.
+  contract. A tool with that contract is a module, not a script. CONTRIBUTING
+  names the maintainer task that runs it.
+- The `tmuxp==1.74.0` installs in `ci.yml` and `tmux-matrix.yml`, which the
+  workspace CLI's tests need for its Python bridge. They stay until
+  [libtmux/docs#324](https://github.com/libtmux/docs/issues/324) decides
+  whether the workspace CLIs keep that bridge; they are not a parity check.
