@@ -22,18 +22,19 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import itertools
 import os
-import re
 import signal
 import subprocess
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import NamedTuple
 
 ROOTS = ("/tmp/libtmux-java-test/", "/tmp/libtmux-java-dev/")
-# The last `-S <socket>` on the command line, which is the one the server uses.
-SOCKET = re.compile(r".*-S ([^ ]*)")
+# How long `tmux kill-server` gets. A server that does not answer is wedged, and a
+# signal is the only way left to end it.
+KILL_SERVER_SECONDS = 5.0
 
 
 class Server(NamedTuple):
@@ -43,18 +44,26 @@ class Server(NamedTuple):
     socket: str
 
 
-def socket_of(command_line: str) -> str:
+def socket_of(arguments: Sequence[str]) -> str:
     """Return the socket a tmux command line names, or an empty string.
 
-    >>> socket_of("tmux -S /tmp/libtmux-java-test/a/s new-session -d")
+    The last `-S <socket>` is the one the server uses. Arguments arrive as the
+    separate words of the command line, so a socket path may hold a space.
+
+    >>> socket_of(["tmux", "-S", "/tmp/libtmux-java-test/a/s", "new-session", "-d"])
     '/tmp/libtmux-java-test/a/s'
-    >>> socket_of("tmux new-session -d")
+    >>> socket_of(["tmux", "new-session", "-d"])
     ''
-    >>> socket_of("tmux -S /first -S /second")
+    >>> socket_of(["tmux", "-S", "/first", "-S", "/second"])
     '/second'
+    >>> socket_of(["tmux", "-S", "/tmp/libtmux-java-test/with space/s"])
+    '/tmp/libtmux-java-test/with space/s'
     """
-    found = SOCKET.match(command_line)
-    return found[1] if found else ""
+    socket = ""
+    for flag, value in itertools.pairwise(arguments):
+        if flag == "-S":
+            socket = value
+    return socket
 
 
 def is_ours(socket: str) -> bool:
@@ -78,22 +87,37 @@ def find_servers(proc: Path = Path("/proc")) -> list[Server]:
             continue
         try:
             name = (entry / "comm").read_text().strip()
-            command_line = (
-                (entry / "cmdline").read_bytes().replace(b"\0", b" ").decode(errors="replace")
-            )
+            arguments = (entry / "cmdline").read_bytes().decode(errors="replace").rstrip("\0")
         except OSError:
             continue
         if "tmux" not in name:
             continue
-        socket = socket_of(command_line)
+        socket = socket_of(arguments.split("\0"))
         if socket:
             found.append(Server(int(entry.name), socket))
     return found
 
 
 def kill_server(socket: str) -> bool:
-    """Ask the server on a socket to exit, and say whether tmux accepted."""
-    done = subprocess.run(["tmux", "-S", socket, "kill-server"], capture_output=True, check=False)
+    """Ask the server on a socket to exit, and say whether tmux accepted.
+
+    A server that does not answer within `KILL_SERVER_SECONDS` counts as not
+    accepting, so the caller signals it instead.
+    """
+    try:
+        done = subprocess.run(
+            ["tmux", "-S", socket, "kill-server"],
+            capture_output=True,
+            check=False,
+            timeout=KILL_SERVER_SECONDS,
+        )
+    except subprocess.TimeoutExpired:
+        print(
+            f"tmux kill-server on {socket} did not answer within {KILL_SERVER_SECONDS:g} seconds;"
+            " signalling it",
+            file=sys.stderr,
+        )
+        return False
     return done.returncode == 0
 
 

@@ -16,7 +16,8 @@ $ uv run scripts/reap-stale-servers/reap_stale_servers.py --reap
 The first command lists each server it would end. The second ends them with
 `tmux kill-server` while the socket exists, and with `SIGTERM` when the system's
 temporary-file cleaner has removed it, which leaves the server reachable only
-through its own command line.
+through its own command line. A server that does not answer `kill-server` in
+time is reported and signalled too.
 
 The test suite reaps abandoned servers for itself. This is for a server whose
 test JVM was killed, which nothing reaps until the next run.

@@ -9,9 +9,9 @@ from __future__ import annotations
 import os
 import signal
 import socket
+import stat
 import subprocess
-import textwrap
-import time
+import sys
 from pathlib import Path
 
 import pytest
@@ -21,15 +21,21 @@ import reap_stale_servers as reaper
 OURS = "/tmp/libtmux-java-test/run-1/s"
 DEV = "/tmp/libtmux-java-dev/api.1/tmux.sock"
 THEIRS = "/tmp/libtmux-rs-test/run-1/s"
+SPACED = "/tmp/libtmux-java-test/a directory/s"
 
 
-def fake_proc(root: Path, entries: dict[int, tuple[str, str]]) -> Path:
-    """Write a `/proc` with a process name and a command line for each pid."""
+def fake_proc(root: Path, entries: dict[int, tuple[str, str | list[str]]]) -> Path:
+    """Write a `/proc` with a process name and a command line for each pid.
+
+    A command line given as a string splits at spaces; one given as a list keeps
+    each item whole, as the kernel does.
+    """
     for pid, (name, command_line) in entries.items():
         directory = root / str(pid)
         directory.mkdir(parents=True)
         (directory / "comm").write_text(name + "\n")
-        (directory / "cmdline").write_bytes(command_line.replace(" ", "\0").encode() + b"\0")
+        words = command_line.split(" ") if isinstance(command_line, str) else command_line
+        (directory / "cmdline").write_bytes("\0".join(words).encode() + b"\0")
     (root / "self").mkdir()
     (root / "version").write_text("fake\n")
     return root
@@ -45,12 +51,14 @@ def test_find_servers_reads_the_socket_of_each_tmux_process(tmp_path: Path) -> N
             13: ("tmux", "tmux new-session -d"),
             14: ("bash", f"bash -c tmux -S {OURS}"),
             15: ("tmux", f"tmux -S {DEV} -f /dev/null new-session"),
+            16: ("tmux", ["tmux", "-S", SPACED, "new-session"]),
         },
     )
     assert reaper.find_servers(proc) == [
         reaper.Server(11, OURS),
         reaper.Server(12, THEIRS),
         reaper.Server(15, DEV),
+        reaper.Server(16, SPACED),
     ]
 
 
@@ -137,34 +145,46 @@ def test_terminate_ignores_a_process_that_is_already_gone() -> None:
     reaper.terminate(done.pid)
 
 
+def stand_in_tmux(directory: Path, body: str) -> Path:
+    """Write an executable Python program named `tmux`, whose process name is tmux's."""
+    program = directory / "tmux"
+    program.write_text(f"#!{sys.executable}\n{body}", encoding="utf-8")
+    program.chmod(program.stat().st_mode | stat.S_IXUSR)
+    return program
+
+
 @pytest.mark.skipif(not Path("/proc/self/comm").exists(), reason="needs /proc")
 def test_a_running_stand_in_is_found_and_ended(tmp_path: Path) -> None:
     """A process named tmux whose socket is under our root is found and signalled.
 
     The stand-in is a script called `tmux`, so its process name is the one a real
     server has. Its socket path lies under this port's root without existing.
+    `Popen` returns once the program has been executed, so its name and command
+    line are already in `/proc` and the lookup needs no retry.
     """
-    stand_in = tmp_path / "tmux"
-    stand_in.write_text(
-        textwrap.dedent("""\
-        #!/bin/sh
-        sleep 30 &
-        wait
-        """)
-    )
-    stand_in.chmod(0o755)
+    stand_in = stand_in_tmux(tmp_path, "import time\ntime.sleep(30)\n")
     root = Path("/tmp/libtmux-java-test")
     root.mkdir(exist_ok=True)
     unreachable = root / f"reap-test-{os.getpid()}" / "s"
     child = subprocess.Popen([str(stand_in), "-S", str(unreachable)])
     try:
-        deadline = time.monotonic() + 5
-        found: list[reaper.Server] = []
-        while time.monotonic() < deadline and not found:
-            found = [server for server in reaper.find_servers() if server.pid == child.pid]
+        found = [server for server in reaper.find_servers() if server.pid == child.pid]
         assert found == [reaper.Server(child.pid, str(unreachable))]
         reaper.reap_one(found[0])
         assert child.wait(timeout=5) == -signal.SIGTERM
     finally:
         child.kill()
         child.wait()
+
+
+def test_a_server_that_never_answers_kill_server_is_given_up_on(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A wedged server must not hold the reaper; it is reported and left to the signal."""
+    stand_in_tmux(tmp_path, "import time\ntime.sleep(30)\n")
+    monkeypatch.setenv("PATH", f"{tmp_path}{os.pathsep}{os.environ['PATH']}")
+    monkeypatch.setattr(reaper, "KILL_SERVER_SECONDS", 0.5)
+
+    assert reaper.kill_server("/tmp/libtmux-java-test/wedged/s") is False
+
+    assert "did not answer within 0.5 seconds" in capsys.readouterr().err
