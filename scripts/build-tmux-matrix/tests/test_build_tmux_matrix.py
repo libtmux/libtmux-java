@@ -2,48 +2,65 @@
 
 A small source archive stands in for tmux. Its `configure` and `Makefile` install
 a `bin/tmux` that prints a version, so the whole path from download to a usable
-tree runs offline.
+tree runs offline. The stand-ins are Python programs; `make` runs the install
+recipe, which only copies a file.
 """
 
 from __future__ import annotations
 
+import hashlib
 import io
 import json
 import shutil
+import socket
+import sys
 import tarfile
-import textwrap
 from pathlib import Path
 
 import pytest
 
 import build_tmux_matrix as builder
 
-CONFIGURE = textwrap.dedent("""\
-    #!/bin/sh
-    prefix=${1#--prefix=}
-    printf 'PREFIX = %s\\n' "$prefix" > Makefile
-    cat >> Makefile <<'MAKE'
-    all:
-    \t@true
-    install:
-    \tmkdir -p $(PREFIX)/bin
-    \tprintf '#!/bin/sh\\necho tmux %s\\n' "$(VERSION)" > $(PREFIX)/bin/tmux
-    \tchmod +x $(PREFIX)/bin/tmux
-    MAKE
-    printf 'VERSION = %s\\n' "$(basename "$PWD" | sed 's/^tmux-//')" >> Makefile
-    """)
+CONFIGURE = f"""#!{sys.executable}
+import pathlib
+import sys
+
+prefix = sys.argv[1].removeprefix("--prefix=")
+pathlib.Path("Makefile").write_text(
+    f"all:\\n\\t@true\\ninstall:\\n\\tmkdir -p {{prefix}}/bin\\n\\tcp tmux {{prefix}}/bin/tmux\\n"
+)
+"""
+BROKEN_CONFIGURE = f"#!{sys.executable}\nraise SystemExit(7)\n"
 
 
-def publish(base: Path, release: str) -> None:
-    """Write `<base>/<release>/tmux-<release>.tar.gz` holding the stand-in source."""
+def stand_in_tmux(release: str) -> str:
+    """Return a tmux that reports its release and does nothing else."""
+    return f"#!{sys.executable}\nprint('tmux {release}')\n"
+
+
+def publish(base: Path, release: str, *, configure: str = CONFIGURE) -> str:
+    """Write `<base>/<release>/tmux-<release>.tar.gz` holding the stand-in source.
+
+    Returns the archive's SHA256, which is what the shared action would pin.
+    """
     directory = base / release
     directory.mkdir(parents=True)
-    with tarfile.open(directory / f"tmux-{release}.tar.gz", "w:gz") as tar:
-        info = tarfile.TarInfo(f"tmux-{release}/configure")
-        data = CONFIGURE.encode()
-        info.size = len(data)
-        info.mode = 0o755
-        tar.addfile(info, io.BytesIO(data))
+    archive = directory / f"tmux-{release}.tar.gz"
+    with tarfile.open(archive, "w:gz") as tar:
+        for name, text in (("configure", configure), ("tmux", stand_in_tmux(release))):
+            info = tarfile.TarInfo(f"tmux-{release}/{name}")
+            data = text.encode()
+            info.size = len(data)
+            info.mode = 0o755
+            tar.addfile(info, io.BytesIO(data))
+    return hashlib.sha256(archive.read_bytes()).hexdigest()
+
+
+def pin(tmp_path: Path, digests: dict[str, str]) -> list[str]:
+    """Write the digests a shared action would pin and return the option that names them."""
+    path = tmp_path / "tmux-releases.json"
+    path.write_text(json.dumps(digests))
+    return ["--digests-url", path.as_uri()]
 
 
 @pytest.fixture
@@ -89,10 +106,16 @@ def test_a_missing_release_is_built_and_a_built_one_is_kept(
 ) -> None:
     """Run twice: the first run builds all three, the second builds none."""
     base = tmp_path / "published"
-    for release in ("1.1", "1.2a", "1.0"):
-        publish(base, release)
+    digests = {release: publish(base, release) for release in ("1.1", "1.2a", "1.0")}
     destination = tmp_path / "tree"
-    arguments = [str(destination), "--manifest", str(manifest), "--base-url", base.as_uri()]
+    arguments = [
+        str(destination),
+        "--manifest",
+        str(manifest),
+        "--base-url",
+        base.as_uri(),
+        *pin(tmp_path, digests),
+    ]
 
     assert builder.main(arguments) == 0
     first = capsys.readouterr().out
@@ -107,16 +130,98 @@ def test_a_missing_release_is_built_and_a_built_one_is_kept(
     assert second.rstrip().endswith(f"./gradlew testTmuxMatrix -PlibtmuxMatrix={destination}")
 
 
+def run_one_release(
+    tmp_path: Path, manifest: Path, base: Path, digests: dict[str, str]
+) -> tuple[int, Path]:
+    """Build the manifest's lanes from `base` against `digests`; return the status and the tree."""
+    destination = tmp_path / "tree"
+    status = builder.main(
+        [
+            str(destination),
+            "--manifest",
+            str(manifest),
+            "--base-url",
+            base.as_uri(),
+            *pin(tmp_path, digests),
+        ]
+    )
+    return status, destination
+
+
 @pytest.mark.skipif(shutil.which("make") is None, reason="needs make")
 def test_a_failed_build_stops_the_run(
     tmp_path: Path, manifest: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A release that does not build is an error, not a missing line in the table."""
     base = tmp_path / "published"
+    digests = {"1.1": publish(base, "1.1", configure=BROKEN_CONFIGURE)}
+
+    status, destination = run_one_release(tmp_path, manifest, base, digests)
+
+    captured = capsys.readouterr()
+    assert status == 1
+    assert "== building tmux 1.1" in captured.out
+    assert "configure" in captured.err
+    assert "failed with status 7" in captured.err
+    assert not (destination / "1.1" / "bin" / "tmux").exists()
+
+
+def test_an_archive_that_is_not_the_pinned_one_is_refused(
+    tmp_path: Path, manifest: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The bytes must be the ones CI starts from; nothing is built from any others."""
+    base = tmp_path / "published"
+    digests = {"1.1": publish(base, "1.1")}
+    (base / "1.1" / "tmux-1.1.tar.gz").write_bytes(b"not the pinned archive")
+
+    status, destination = run_one_release(tmp_path, manifest, base, digests)
+
+    assert status == 1
+    assert "not the pinned" in capsys.readouterr().err
+    assert not (destination / "1.1").exists()
+
+
+def test_a_release_the_shared_action_does_not_pin_is_refused(
+    tmp_path: Path, manifest: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A release with no pinned digest cannot be verified, so it is not built."""
+    base = tmp_path / "published"
     publish(base, "1.1")
-    (base / "1.1" / "tmux-1.1.tar.gz").write_bytes(b"not an archive")
-    with pytest.raises(tarfile.ReadError):
-        builder.main(
-            [str(tmp_path / "tree"), "--manifest", str(manifest), "--base-url", base.as_uri()]
-        )
-    assert "== building tmux 1.1" in capsys.readouterr().out
+
+    status, destination = run_one_release(tmp_path, manifest, base, {})
+
+    assert status == 1
+    assert "pins no SHA256 for tmux 1.1" in capsys.readouterr().err
+    assert not (destination / "1.1").exists()
+
+
+def test_the_pin_is_read_from_the_workflow_the_matrix_runs() -> None:
+    """The digests come from the commit CI builds with, so they cannot drift from it."""
+    commit = builder.pinned_commit(builder.WORKFLOW)
+
+    assert len(commit) == 40
+    assert commit in builder.WORKFLOW.read_text()
+
+
+def test_a_download_that_stops_answering_is_given_up_on(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A server that accepts the connection and sends nothing must not hold the run."""
+    monkeypatch.setattr(builder, "DOWNLOAD_TIMEOUT_SECONDS", 0.5)
+    with socket.socket() as silent:
+        silent.bind(("127.0.0.1", 0))
+        silent.listen(1)
+        url = f"http://127.0.0.1:{silent.getsockname()[1]}/tmux.tar.gz"
+
+        with pytest.raises(builder.BuildError, match="cannot download"):
+            builder.download(url, tmp_path / "tmux.tar.gz")
+
+
+def test_a_build_step_that_never_finishes_is_given_up_on(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A hung ./configure or make ends the run with the step named."""
+    monkeypatch.setattr(builder, "STEP_TIMEOUT_SECONDS", 0.5)
+
+    with pytest.raises(builder.BuildError, match=r"did not finish within 0\.5 seconds"):
+        builder.run([sys.executable, "-c", "import time; time.sleep(30)"], tmp_path)

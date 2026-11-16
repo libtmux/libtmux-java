@@ -15,6 +15,16 @@ source archive from [tmux/tmux](https://github.com/tmux/tmux/releases), runs
 `./configure --prefix=<destination>/<release>`, `make` and `make install`, and
 prints the version of each result. A release that is already built is kept.
 
+Before it builds, it checks each archive against the SHA256 that the
+[`build-tmux` action](https://github.com/libtmux/.github/tree/main/actions/build-tmux)
+of `libtmux/.github` pins for that release, read at the commit that
+`tmux-matrix.yml` pins, so a build here starts from the bytes CI starts from. It
+reads that file over the network, and refuses an archive that differs or a
+release the action does not pin. It does not call the action: that is a runner
+step, which reads `RUNNER_TEMP`, writes `GITHUB_OUTPUT` and installs packages
+with apt. A download or build step that stops making progress ends the run
+with the step named.
+
 The previews, `master` and the development builds, are not built here. CI builds
 them from a commit, and `gh workflow run tmux-matrix.yml` runs any ref
 (see [CONTRIBUTING](../../.github/CONTRIBUTING.md#running-ci-against-any-tmux)).
