@@ -19,8 +19,6 @@ the network, so the same plan can be reproduced locally:
         --scope custom --tmux-ref 3.6b,master --tmate on-failure
 """
 
-from __future__ import annotations
-
 import argparse
 import json
 import pathlib

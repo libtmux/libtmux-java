@@ -5,8 +5,6 @@ with that rule removed, which must fail. A check that passes either way proves
 nothing about the rule it is named for.
 """
 
-from __future__ import annotations
-
 import json
 import pathlib
 import tempfile

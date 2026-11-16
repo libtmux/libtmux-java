@@ -4,8 +4,6 @@ The driver is a test resource of `integration-tests`; these run it against
 Python programs on a real pseudo-terminal, so they start no tmux.
 """
 
-from __future__ import annotations
-
 import os
 import subprocess
 import sys

@@ -1,7 +1,5 @@
 """Tests for the pty helper, against a real pseudo-terminal and real children."""
 
-from __future__ import annotations
-
 import os
 import subprocess
 import sys

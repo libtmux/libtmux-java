@@ -17,8 +17,6 @@ Run from the repository root:
     uv run scripts/ci-check/ci_check.py
 """
 
-from __future__ import annotations
-
 import argparse
 import json
 import pathlib
