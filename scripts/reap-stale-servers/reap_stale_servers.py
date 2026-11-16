@@ -18,8 +18,6 @@ on this machine and their leftover servers are reported, never ended;
 `.github/CONTRIBUTING.md` explains why.
 """
 
-from __future__ import annotations
-
 import argparse
 import contextlib
 import itertools
@@ -30,6 +28,12 @@ import sys
 from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import NamedTuple
+
+# Importing a shared module must not leave a __pycache__ in the checkout.
+sys.dont_write_bytecode = True
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
+
+import bounded
 
 ROOTS = ("/tmp/libtmux-java-test/", "/tmp/libtmux-java-dev/")
 # How long `tmux kill-server` gets. A server that does not answer is wedged, and a
@@ -105,10 +109,9 @@ def kill_server(socket: str) -> bool:
     accepting, so the caller signals it instead.
     """
     try:
-        done = subprocess.run(
+        done = bounded.run(
             ["tmux", "-S", socket, "kill-server"],
             capture_output=True,
-            check=False,
             timeout=KILL_SERVER_SECONDS,
         )
     except subprocess.TimeoutExpired:

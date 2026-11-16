@@ -22,6 +22,8 @@ time is reported and signalled too.
 The test suite reaps abandoned servers for itself. This is for a server whose
 test JVM was killed, which nothing reaps until the next run.
 
+`tmux kill-server` gets 5 s, and a server that does not answer is signalled.
+
 It only ever touches sockets under `/tmp/libtmux-java-test` and
 `/tmp/libtmux-java-dev`. Servers under the roots of other libtmux ports are
 counted and reported, never ended.

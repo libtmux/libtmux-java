@@ -4,8 +4,6 @@ A fake `/proc` and a stand-in process named `tmux` replace real servers, so the
 tests start no tmux and cannot reap one that belongs to somebody else.
 """
 
-from __future__ import annotations
-
 import os
 import signal
 import socket
