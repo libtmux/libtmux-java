@@ -165,7 +165,7 @@ final class ExecutionTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"missing", "0", "1", "False", "True", "'2'", "2.0"})
+    @ValueSource(strings = {"missing", "0", "1", "false", "true", "\"2\"", "2.0"})
     void pythonOptionalPolicyIsRequiredBeforeExternalCode(String policy) throws Exception {
         Path marker = directory.resolve("optional-policy-entered");
         Path backend = pythonBackend("3.3a", marker, policy.equals("missing") ? "" : policy);
@@ -211,27 +211,41 @@ final class ExecutionTest {
         return pythonBackend(floor, marker, "2");
     }
 
+    /**
+     * A stand-in Python backend: the checked package under the {@code bridge/backend} test resources,
+     * with the floor, the policy version (a JSON value; empty leaves it undefined) and the marker path
+     * it records entry to written beside it.
+     */
     private Path pythonBackend(String floor, Path marker, String policy) throws Exception {
         Path backend = directory.resolve("python-" + floor);
-        Files.createDirectories(backend.resolve("libtmux"));
+        for (String file : List.of(
+                "libtmux/__init__.py",
+                "libtmux/common.py",
+                "tmuxp/__init__.py",
+                "tmuxp/workspace/__init__.py",
+                "tmuxp/cli.py")) {
+            copyBridgeResource("backend/" + file, backend.resolve(file));
+        }
         Files.writeString(
-                backend.resolve("libtmux/__init__.py"), "class Server:\n    def __init__(self, **kwargs): pass\n");
-        Files.writeString(
-                backend.resolve("libtmux/common.py"),
-                "TMUX_MIN_VERSION = '" + floor + "'\n"
-                        + (policy.isEmpty() ? "" : "TMUX_OPTIONAL_FEATURE_POLICY_VERSION = " + policy + "\n"));
-        Files.createDirectories(backend.resolve("tmuxp/workspace"));
-        Files.writeString(backend.resolve("tmuxp/__init__.py"), "");
-        String entered = "from pathlib import Path\nPath(" + Documents.JSON.writeValueAsString(marker.toString())
-                + ").write_text('entered')\n";
-        Files.writeString(backend.resolve("tmuxp/workspace/__init__.py"), entered);
-        Files.writeString(
-                backend.resolve("tmuxp/cli.py"), "def cli():\n" + entered.indent(4) + "    print('qualified')\n");
+                backend.resolve("settings.json"),
+                "{\"floor\":" + Documents.JSON.writeValueAsString(floor)
+                        + (policy.isEmpty() ? "" : ",\"policy\":" + policy) + "}");
+        Files.writeString(backend.resolve("marker.txt"), marker.toString());
         Files.createDirectories(backend.resolve("tmuxp-1.74.0.dist-info"));
         Files.writeString(
                 backend.resolve("tmuxp-1.74.0.dist-info/METADATA"),
                 "Metadata-Version: 2.1\nName: tmuxp\nVersion: 1.74.0\n");
         return backend;
+    }
+
+    /** Copies a Python program from the {@code bridge} test resources to {@code target}. */
+    private static void copyBridgeResource(String name, Path target) throws Exception {
+        String resource = "/io/github/libtmux/workspace/cli/bridge/" + name;
+        try (InputStream source = ExecutionTest.class.getResourceAsStream(resource)) {
+            assertNotNull(source, "missing test resource " + resource);
+            Files.createDirectories(target.getParent());
+            Files.copy(source, target, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        }
     }
 
     @ParameterizedTest
@@ -287,23 +301,7 @@ final class ExecutionTest {
                 python != null, "set TMUX_WORKSPACE_TEST_PYTHON for bridge fixtures");
         Path source = directory.resolve("extension.yaml");
         Path socket = directory.resolve("extension-socket");
-        Files.writeString(directory.resolve("extensions.py"), """
-                import sys
-                from tmuxp.workspace.builder.classic import ClassicWorkspaceBuilder
-                class Plugin:
-                    def before_workspace_builder(self, session): pass
-                    def on_window_create(self, window): window.set_option('@plugin', 'called')
-                    def on_pane_create(self, pane): pass
-                    def after_window_finished(self, window): pass
-                    def before_script(self, session): pass
-                class Builder(ClassicWorkspaceBuilder):
-                    def build(self, session=None, append=False):
-                        assert append == self.session_config['custom_append']
-                        super().build(session=session, append=append)
-                        print('extension-out\\x1b', flush=True)
-                        print('extension-err', file=sys.stderr, flush=True)
-                        if self.session_config['custom_fail']: raise RuntimeError('extension failed')
-                """);
+        copyBridgeResource("extensions.py", directory.resolve("extensions.py"));
         Files.writeString(
                 source,
                 "session_name: extension\nworkspace_builder: extensions:Builder\n"
@@ -428,15 +426,7 @@ final class ExecutionTest {
                 python != null, "set TMUX_WORKSPACE_TEST_PYTHON for bridge fixtures");
         Path source = directory.resolve("existing-extension.yaml");
         Path socket = directory.resolve("existing-extension-socket");
-        Files.writeString(directory.resolve("existing_extension.py"), """
-                from pathlib import Path
-                class Builder:
-                    def __init__(self, session_config, server, plugins):
-                        assert session_config['start_directory'] == str(Path(__file__).parent)
-                        self.session = server.sessions.get(session_name=session_config['custom_session'])
-                        self.plugins = plugins
-                    def build(self, session=None, append=False): pass
-                """);
+        copyBridgeResource("existing_extension.py", directory.resolve("existing_extension.py"));
         Files.writeString(source, """
                 session_name: requested
                 workspace_builder: existing_extension:Builder
@@ -479,17 +469,7 @@ final class ExecutionTest {
         Path source = directory.resolve("cancel-extension.yaml");
         Path socket = directory.resolve("cancel-extension-socket");
         Path marker = directory.resolve("extension-pid");
-        Files.writeString(directory.resolve("cancel_extension.py"), """
-                import os, time
-                from pathlib import Path
-                from tmuxp.workspace.builder.classic import ClassicWorkspaceBuilder
-                class Builder(ClassicWorkspaceBuilder):
-                    def build(self, session=None, append=False):
-                        super().build(session=session, append=append)
-                        print('bridge-ready\\x1b', flush=True)
-                        Path(self.session_config['marker']).write_text(str(os.getpid()))
-                        time.sleep(30)
-                """);
+        copyBridgeResource("cancel_extension.py", directory.resolve("cancel_extension.py"));
         Files.writeString(
                 source,
                 "session_name: cancelled-extension\nworkspace_builder: cancel_extension:Builder\n"
