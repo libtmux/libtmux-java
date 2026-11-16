@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import os
 import shutil
 import socket
 import sys
@@ -225,3 +226,67 @@ def test_a_build_step_that_never_finishes_is_given_up_on(
 
     with pytest.raises(builder.BuildError, match=r"did not finish within 0\.5 seconds"):
         builder.run([sys.executable, "-c", "import time; time.sleep(30)"], tmp_path)
+
+
+def test_one_release_can_be_built_alone(
+    tmp_path: Path, manifest: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A macOS lane builds the one release it is named for."""
+    base = tmp_path / "published"
+    digests = {"1.2a": publish(base, "1.2a")}
+    destination = tmp_path / "tree"
+
+    status = builder.main(
+        [
+            str(destination),
+            "--manifest",
+            str(manifest),
+            "--base-url",
+            base.as_uri(),
+            "--only",
+            "1.2a",
+            *pin(tmp_path, digests),
+        ]
+    )
+
+    assert status == 0
+    assert (destination / "1.2a" / "bin" / "tmux").is_file()
+    assert not (destination / "1.1").exists()
+    assert "lanes: 1.2a\n" in capsys.readouterr().out
+
+
+def test_a_release_outside_the_manifest_cannot_be_built_alone(
+    tmp_path: Path, manifest: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert builder.main([str(tmp_path / "tree"), "--manifest", str(manifest), "--only", "9.9"]) == 1
+
+    assert "9.9 is not a release of lanes.json" in capsys.readouterr().err
+
+
+def test_macos_finds_its_libraries_through_homebrew(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The build names each Homebrew prefix, and drops utf8proc, as the macOS lane did."""
+    brew = tmp_path / "brew"
+    brew.write_text(
+        f"#!{sys.executable}\nimport sys\nprint('/opt/' + sys.argv[-1])\n", encoding="utf-8"
+    )
+    brew.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{tmp_path}{os.pathsep}{os.environ['PATH']}")
+    monkeypatch.setattr(sys, "platform", "darwin")
+
+    environment = builder.build_environment()
+
+    assert environment["PKG_CONFIG_PATH"] == (
+        "/opt/libevent/lib/pkgconfig:/opt/ncurses/lib/pkgconfig:/opt/jemalloc/lib/pkgconfig"
+    )
+    assert environment["CPPFLAGS"] == "-I/opt/ncurses/include"
+    assert environment["LDFLAGS"] == "-L/opt/ncurses/lib"
+    assert builder.configure_arguments(Path("/p")) == ["--prefix=/p", "--disable-utf8proc"]
+
+
+def test_linux_builds_in_the_ambient_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(sys, "platform", "linux")
+
+    assert builder.build_environment() == dict(os.environ)
+    assert builder.configure_arguments(Path("/p")) == ["--prefix=/p"]

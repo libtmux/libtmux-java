@@ -29,6 +29,11 @@ The previews, `master` and the development builds, are not built here. CI builds
 them from a commit, and `gh workflow run tmux-matrix.yml` runs any ref
 (see [CONTRIBUTING](../../.github/CONTRIBUTING.md#running-ci-against-any-tmux)).
 
+`--only RELEASE` builds one release of the manifest. The macOS lanes of
+`clojure-compatibility.yml` run it that way, with Homebrew's libevent, ncurses and
+jemalloc found through pkg-config and `--disable-utf8proc`, because the shared
+`build-tmux` action installs its packages with apt and runs on Linux.
+
 Building needs a C compiler, `make`, `libevent` and `ncurses` headers, and
 `yacc` or `bison`. Then run the matrix:
 

@@ -157,16 +157,13 @@ class CheckTest(unittest.TestCase):
             "${{ matrix.slug }}",
         ):
             with self.subTest(spliced=spliced):
+                before = '"-Plibtmux.testJdk=$JDK" --stacktrace\n'
                 self.edit(
-                    check.MATRIX,
-                    '          ./gradlew "$TASK"',
-                    f'          echo {spliced}\n          ./gradlew "$TASK"',
+                    check.MATRIX, before, f'"-Plibtmux.testJdk=$JDK" --stacktrace {spliced}\n'
                 )
                 self.assertFlags("splices an input into a script")
                 self.edit(
-                    check.MATRIX,
-                    f'          echo {spliced}\n          ./gradlew "$TASK"',
-                    '          ./gradlew "$TASK"',
+                    check.MATRIX, f'"-Plibtmux.testJdk=$JDK" --stacktrace {spliced}\n', before
                 )
 
     def test_a_matrix_that_cannot_be_called_is_flagged(self) -> None:

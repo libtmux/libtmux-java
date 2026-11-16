@@ -27,7 +27,10 @@ exclude-newer = "3 days"
 pythonpath = [
   "scripts/build-tmux-matrix",
   "scripts/ci-check",
+  "scripts/check-tmux-build",
   "scripts/ci-plan",
+  "scripts/no-tmux-survivors",
+  "scripts/release-checks",
   "scripts/pty-helper",
   "scripts/reap-stale-servers",
   "scripts/verify-staged-release",
@@ -49,7 +52,10 @@ line-length = 100
 src = [
   "scripts/build-tmux-matrix",
   "scripts/ci-check",
+  "scripts/check-tmux-build",
   "scripts/ci-plan",
+  "scripts/no-tmux-survivors",
+  "scripts/release-checks",
   "scripts/pty-helper",
   "scripts/reap-stale-servers",
   "scripts/verify-staged-release",
@@ -63,7 +69,10 @@ python-version = "3.12"
 extra-paths = [
   "scripts/build-tmux-matrix",
   "scripts/ci-check",
+  "scripts/check-tmux-build",
   "scripts/ci-plan",
+  "scripts/no-tmux-survivors",
+  "scripts/release-checks",
   "scripts/pty-helper",
   "scripts/reap-stale-servers",
   "scripts/verify-staged-release",

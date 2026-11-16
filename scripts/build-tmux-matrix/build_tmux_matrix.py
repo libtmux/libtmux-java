@@ -15,6 +15,9 @@ The releases are read from `gradle/tmux-lanes.json`, so this cannot drift from
 what the matrix runs. CI builds the same releases one per runner; this is the
 same thing on one machine. A release that already has `bin/tmux` is kept.
 
+On macOS the build finds libevent, ncurses and jemalloc through Homebrew, and
+`--only RELEASE` builds one release, which is what a macOS lane does.
+
 Each archive is checked against the SHA256 that the `build-tmux` action of
 `libtmux/.github` pins for that release, read at the commit `tmux-matrix.yml`
 pins, so a build here starts from the bytes CI starts from.
@@ -148,12 +151,45 @@ def download(url: str, archive: Path) -> None:
         raise BuildError(message) from error
 
 
-def run(command: list[str], cwd: Path) -> None:
+def homebrew_environment() -> dict[str, str]:
+    """Return the environment that lets tmux's configure find Homebrew's libraries.
+
+    Homebrew keeps libevent, ncurses and jemalloc outside the compiler's search
+    path, so each is named through pkg-config, and ncurses also by include and
+    library directory.
+    """
+    prefixes = {
+        formula: subprocess.run(
+            ["brew", "--prefix", formula], capture_output=True, text=True, check=True
+        ).stdout.strip()
+        for formula in ("libevent", "ncurses", "jemalloc")
+    }
+    return {
+        **os.environ,
+        "PKG_CONFIG_PATH": ":".join(f"{prefix}/lib/pkgconfig" for prefix in prefixes.values()),
+        "CPPFLAGS": f"-I{prefixes['ncurses']}/include",
+        "LDFLAGS": f"-L{prefixes['ncurses']}/lib",
+    }
+
+
+def build_environment() -> dict[str, str]:
+    """Return the environment a build runs in."""
+    return homebrew_environment() if sys.platform == "darwin" else dict(os.environ)
+
+
+def configure_arguments(prefix: Path) -> list[str]:
+    """Return the arguments for `./configure`; macOS builds without utf8proc."""
+    extra = ["--disable-utf8proc"] if sys.platform == "darwin" else []
+    return [f"--prefix={prefix}", *extra]
+
+
+def run(command: list[str], cwd: Path, env: dict[str, str] | None = None) -> None:
     """Run a build step, hiding its output unless it fails."""
     try:
         done = subprocess.run(
             command,
             cwd=cwd,
+            env=env,
             capture_output=True,
             text=True,
             check=False,
@@ -184,9 +220,10 @@ def build(release: str, destination: Path, digests: dict[str, str], base: str = 
             raise BuildError(message) from error
         source = work / f"tmux-{release}"
         jobs = str(os.cpu_count() or 2)
-        run(["./configure", f"--prefix={prefix}"], source)
-        run(["make", f"-j{jobs}"], source)
-        run(["make", "install"], source)
+        environment = build_environment()
+        run(["./configure", *configure_arguments(prefix)], source, environment)
+        run(["make", f"-j{jobs}"], source, environment)
+        run(["make", "install"], source, environment)
     return prefix / "bin" / "tmux"
 
 
@@ -207,6 +244,7 @@ def main(argv: list[str] | None = None) -> int:
         help=f"the tree to build into (default {DEFAULT_DESTINATION})",
     )
     parser.add_argument("--manifest", type=Path, default=MANIFEST)
+    parser.add_argument("--only", help="build this release of the manifest and no other")
     parser.add_argument("--base-url", default=RELEASES, help="where release archives are published")
     parser.add_argument(
         "--digests-url",
@@ -220,6 +258,11 @@ def main(argv: list[str] | None = None) -> int:
     except ManifestError as error:
         print(error, file=sys.stderr)
         return 1
+    if options.only is not None:
+        if options.only not in releases:
+            print(f"{options.only} is not a release of {options.manifest.name}", file=sys.stderr)
+            return 1
+        releases = [options.only]
     print(f"lanes: {' '.join(releases)}")
     print(f"destination: {destination}")
     digests: dict[str, str] | None = None
