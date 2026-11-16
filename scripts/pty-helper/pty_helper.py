@@ -1,8 +1,9 @@
 """Read from and wait on a child that writes to a pseudo-terminal.
 
-The Java tests read this file as a resource and put it ahead of the driver
-program they run with `python3`, so the imports below are the ones those
-programs rely on, and the file defines only the two functions they call.
+The Java tests drive terminal programs with the two functions below. The
+programs `ProcessTest` runs import this module. `NativeClient` puts the text of
+this file ahead of its program, so the imports below are the ones that program
+relies on.
 """
 
 import errno

@@ -123,7 +123,8 @@ jobs:
           retention-days: 7
 
   # The support scripts under scripts/ are typed Python with tests. The jobs that call one only run
-  # it; this job formats, lints, type checks and tests them.
+  # it; this job formats, lints, type checks and tests them. The Python programs that tests drive
+  # are test resources and get the same format, lint and type checks.
   scripts:
     name: scripts (ruff, ty, pytest)
     runs-on: ubuntu-latest
@@ -139,9 +140,9 @@ jobs:
       - name: Format, lint, type check and test the scripts
         run: |
           uv sync --locked
-          uv run --locked ruff format --check scripts
-          uv run --locked ruff check scripts
-          uv run --locked ty check scripts
+          uv run --locked ruff format --check scripts libtmux-workspace-cli/src/test/resources
+          uv run --locked ruff check scripts libtmux-workspace-cli/src/test/resources
+          uv run --locked ty check scripts libtmux-workspace-cli/src/test/resources
           uv run --locked pytest scripts
 
   # A release without the upload: the version a tag would publish, signed by a key made for this run,
