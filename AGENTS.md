@@ -30,7 +30,8 @@ being made:
   help text, API documentation, and source comments:
   [`.github/WRITING.md`](.github/WRITING.md)
 - Support scripts: what may stay, their language, layout and checks:
-  [`.github/SCRIPTS.md`](.github/SCRIPTS.md)
+  [`.github/SCRIPTS.md`](.github/SCRIPTS.md). The commands that run the checks
+  are in [`.github/CONTRIBUTING.md`](.github/CONTRIBUTING.md#checking-the-scripts).
 - Contribution workflow, building, testing, and pull requests:
   [`.github/CONTRIBUTING.md`](.github/CONTRIBUTING.md)
 - Security-sensitive changes: [`SECURITY.md`](SECURITY.md)

@@ -185,6 +185,52 @@ How a fence says what it is — the directives, the `// →` assertions, the
 fixtures a snippet may assume — is in [`docs/README.md`](../docs/README.md#how-these-pages-are-tested), beside
 the code that reads them.
 
+### Checking the scripts
+
+The support scripts under [`scripts/`](../scripts/README.md), and the Python
+programs that tests run from `libtmux-workspace-cli/src/test/resources` and
+`integration-tests/src/test/resources`, are checked outside Gradle with
+[uv](https://docs.astral.sh/uv/). `pyproject.toml` pins ruff, ty and pytest in
+`uv.lock`; `--locked` refuses to run against a stale lock. CI runs the same
+commands in the `scripts (ruff, ty, pytest)` job. Install the pinned tools:
+
+```console
+$ uv sync --locked
+```
+
+Check formatting:
+
+```console
+$ uv run --locked ruff format --check \
+    scripts \
+    libtmux-workspace-cli/src/test/resources \
+    integration-tests/src/test/resources
+```
+
+Lint:
+
+```console
+$ uv run --locked ruff check \
+    scripts \
+    libtmux-workspace-cli/src/test/resources \
+    integration-tests/src/test/resources
+```
+
+Check types:
+
+```console
+$ uv run --locked ty check \
+    scripts \
+    libtmux-workspace-cli/src/test/resources \
+    integration-tests/src/test/resources
+```
+
+Run the tests and doctests:
+
+```console
+$ uv run --locked pytest scripts
+```
+
 A green `check` that reported `UP-TO-DATE` for every task verified nothing.
 Force it when that matters:
 

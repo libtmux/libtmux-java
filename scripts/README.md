@@ -1,0 +1,20 @@
+# Scripts
+
+Support scripts for CI, releases and maintainer tasks.
+[SCRIPTS.md](../.github/SCRIPTS.md) says what may stay here. Each is typed
+Python in a directory of its own with a README and tests, and is run through
+`uv`.
+
+| Directory | Job |
+| --- | --- |
+| [`build-tmux-matrix/`](build-tmux-matrix/README.md) | Build every tmux release the matrix tests into one tree |
+| [`ci-check/`](ci-check/README.md) | Check that the docs and workflows agree with `gradle/tmux-lanes.json` |
+| [`ci-plan/`](ci-plan/README.md) | Plan the jobs of the tmux matrix workflow and check their results |
+| [`pty-helper/`](pty-helper/README.md) | Read from and wait on a child on a pseudo-terminal; test data the Java tests import |
+| [`reap-stale-servers/`](reap-stale-servers/README.md) | List, and end, the tmux servers this port abandoned |
+| [`verify-staged-release/`](verify-staged-release/README.md) | Check a staged release against what the Central Portal refuses |
+
+The format, lint, type and test commands for all of them, and for the Python test
+programs under `libtmux-workspace-cli/src/test/resources` and
+`integration-tests/src/test/resources`, are in
+[CONTRIBUTING](../.github/CONTRIBUTING.md#checking-the-scripts).

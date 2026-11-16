@@ -33,6 +33,10 @@ inline (PEP 723) and run scripts with `uv run`.
   one file with a usage header.
 - Scripts pass `ruff format`, `ruff check`, `ty check` and `pytest`, with
   `pytest-asyncio` for async code and doctests collected, in CI.
+  [`scripts/README.md`](../scripts/README.md) lists the scripts, and
+  [CONTRIBUTING](CONTRIBUTING.md#checking-the-scripts) gives the four commands.
+- A Python program a test runs is a checked file under that module's test
+  resources, not a string in a test; the same four checks cover it.
 - Use current language and tool idioms; no shims below the project's floor.
 - Before a new or rewritten script merges, a reviewer who did not write it
   checks it against [WRITING.md](WRITING.md) and
