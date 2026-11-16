@@ -42,25 +42,13 @@ final class McpPreflightTest {
 
     @Test
     void keepsStdinOpenUntilTheInitializeResponse() throws Exception {
-        var server = temporary.resolve("stdin-open.py");
-        Files.writeString(server, """
-                #!/usr/bin/env python3
-                import select
-                import sys
-                import time
+        var server = TestPrograms.copy("stdin_open_server.py", temporary);
 
-                sys.stdin.readline()
-                closed = select.poll()
-                closed.register(sys.stdin, select.POLLHUP)
-                time.sleep(0.2)
-                if closed.poll(0):
-                    raise SystemExit(9)
-                print('{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-06-18"}}', flush=True)
-                time.sleep(300)
-                """, StandardCharsets.UTF_8);
-        assertTrue(server.toFile().setExecutable(true));
-
-        McpPreflight.run(new ServerSpec(server.toString(), List.of()), System.getenv(), Duration.ofSeconds(3), 1024);
+        McpPreflight.run(
+                new ServerSpec("python3", List.of(server.toString())),
+                System.getenv(),
+                Duration.ofSeconds(3),
+                1024);
     }
 
     @Test

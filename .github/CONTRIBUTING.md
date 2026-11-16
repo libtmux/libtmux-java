@@ -188,11 +188,12 @@ the code that reads them.
 ### Checking the scripts
 
 The support scripts under [`scripts/`](../scripts/README.md), and the Python
-programs that tests run from `libtmux-workspace-cli/src/test/resources` and
-`integration-tests/src/test/resources`, are checked outside Gradle with
-[uv](https://docs.astral.sh/uv/). `pyproject.toml` pins ruff, ty and pytest in
-`uv.lock`; `--locked` refuses to run against a stale lock. CI runs the same
-commands in the `scripts (ruff, ty, pytest)` job. Install the pinned tools:
+programs that tests run from `libtmux-workspace-cli/src/test/resources`,
+`integration-tests/src/test/resources` and `tools/mcp-swap/src/test/resources`,
+are checked outside Gradle with [uv](https://docs.astral.sh/uv/).
+`pyproject.toml` pins ruff, ty and pytest in `uv.lock`; `--locked` refuses to
+run against a stale lock. CI runs the same commands in the
+`scripts (ruff, ty, pytest)` job. Install the pinned tools:
 
 ```console
 $ uv sync --locked
@@ -204,7 +205,8 @@ Check formatting:
 $ uv run --locked ruff format --check \
     scripts \
     libtmux-workspace-cli/src/test/resources \
-    integration-tests/src/test/resources
+    integration-tests/src/test/resources \
+    tools/mcp-swap/src/test/resources
 ```
 
 Lint:
@@ -213,7 +215,8 @@ Lint:
 $ uv run --locked ruff check \
     scripts \
     libtmux-workspace-cli/src/test/resources \
-    integration-tests/src/test/resources
+    integration-tests/src/test/resources \
+    tools/mcp-swap/src/test/resources
 ```
 
 Check types:
@@ -222,7 +225,8 @@ Check types:
 $ uv run --locked ty check \
     scripts \
     libtmux-workspace-cli/src/test/resources \
-    integration-tests/src/test/resources
+    integration-tests/src/test/resources \
+    tools/mcp-swap/src/test/resources
 ```
 
 Run the tests and doctests:

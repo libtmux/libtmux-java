@@ -92,17 +92,9 @@ final class SwapServiceTest {
         }
     }
 
-    private static void assertRecordLockHeld(Path path) throws IOException, InterruptedException {
-        var script = """
-                import fcntl, os, sys
-                handle = os.fdopen(os.open(sys.argv[1], os.O_RDWR), "r+")
-                try:
-                    fcntl.lockf(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                except BlockingIOError:
-                    sys.exit(0)
-                sys.exit(1)
-                """;
-        var probe = new ProcessBuilder("python3", "-c", script, path.toString()).start();
+    private void assertRecordLockHeld(Path path) throws IOException, InterruptedException {
+        var program = TestPrograms.copy("record_lock_probe.py", temporary);
+        var probe = new ProcessBuilder("python3", program.toString(), path.toString()).start();
         assertTrue(probe.waitFor(5, TimeUnit.SECONDS), "record-lock probe timed out");
         assertEquals(0, probe.exitValue(), "external fcntl client acquired the shared lock");
     }

@@ -131,6 +131,7 @@ jobs:
           scripts
           libtmux-workspace-cli/src/test/resources
           integration-tests/src/test/resources
+          tools/mcp-swap/src/test/resources
 
       - name: Lint the scripts
         run: >-
@@ -138,6 +139,7 @@ jobs:
           scripts
           libtmux-workspace-cli/src/test/resources
           integration-tests/src/test/resources
+          tools/mcp-swap/src/test/resources
 
       - name: Type check the scripts
         run: >-
@@ -145,6 +147,7 @@ jobs:
           scripts
           libtmux-workspace-cli/src/test/resources
           integration-tests/src/test/resources
+          tools/mcp-swap/src/test/resources
 
       - name: Test the scripts
         run: uv run --locked pytest scripts
