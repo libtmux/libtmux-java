@@ -4,12 +4,11 @@ Each test stages a small Maven repository, with real signatures from a throwaway
 key, and breaks it one way: a guard that cannot fail is not guarding anything.
 """
 
-from __future__ import annotations
-
 import hashlib
 import os
 import shutil
 import subprocess
+import sys
 import zipfile
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -264,3 +263,12 @@ def test_a_missing_bom_is_refused(tmp_path: Path, capsys: pytest.CaptureFixture[
     status, out = run(tmp_path, capsys)
     assert status == 1
     assert "no staged BOM at" in out
+
+
+def test_a_gpg_that_hangs_does_not_verify(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    gpg = tmp_path / "gpg"
+    gpg.write_text(f"#!{sys.executable}\nimport time\ntime.sleep(30)\n", encoding="utf-8")
+    gpg.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{tmp_path}{os.pathsep}{os.environ['PATH']}")
+    monkeypatch.setattr(verify.bounded, "PROBE", 0.3)
+    assert verify.signature_verifies(tmp_path / "a.asc", tmp_path / "a") is False

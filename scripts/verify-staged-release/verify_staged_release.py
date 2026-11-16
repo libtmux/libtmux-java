@@ -13,8 +13,6 @@ signing key's public half must be in the keyring.
     uv run scripts/verify-staged-release/verify_staged_release.py 0.1.2
 """
 
-from __future__ import annotations
-
 import argparse
 import hashlib
 import re
@@ -23,6 +21,12 @@ import sys
 import zipfile
 from pathlib import Path
 from typing import NamedTuple
+
+# Importing a shared module must not leave a __pycache__ in the checkout.
+sys.dont_write_bytecode = True
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
+
+import bounded
 
 DEFAULT_REPOSITORY = Path("build/staging-repository")
 POM_ELEMENTS = (
@@ -78,12 +82,12 @@ def entries(jar: Path) -> list[str]:
 def signature_verifies(signature: Path, signed: Path) -> bool:
     """Return whether gpg accepts a detached signature of a file."""
     try:
-        done = subprocess.run(
+        done = bounded.run(
             ["gpg", "--batch", "--verify", str(signature), str(signed)],
             capture_output=True,
-            check=False,
+            timeout=bounded.PROBE,
         )
-    except FileNotFoundError:
+    except (FileNotFoundError, subprocess.TimeoutExpired):
         return False
     return done.returncode == 0
 

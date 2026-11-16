@@ -25,6 +25,9 @@ for each of these:
   does not open with ``Notable changes to `<module>`.``;
 - a sources jar with no `.java`, `.kt`, `.scala` or `.clj` file.
 
+`gpg --verify` stops after 10 s (`bounded.PROBE`); a signature that cannot be
+checked counts as not verifying.
+
 The tests stage a small repository signed by a throwaway key and break it one
 way at a time. They need `gpg` and skip without it, except when `CI` is set.
 
