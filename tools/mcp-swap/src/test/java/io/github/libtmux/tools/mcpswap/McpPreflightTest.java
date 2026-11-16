@@ -45,10 +45,7 @@ final class McpPreflightTest {
         var server = TestPrograms.copy("stdin_open_server.py", temporary);
 
         McpPreflight.run(
-                new ServerSpec("python3", List.of(server.toString())),
-                System.getenv(),
-                Duration.ofSeconds(3),
-                1024);
+                new ServerSpec("python3", List.of(server.toString())), System.getenv(), Duration.ofSeconds(3), 1024);
     }
 
     @Test
