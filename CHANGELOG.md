@@ -59,6 +59,11 @@ release that first shipped the module.
   READMEs and guides cover captured data, tmux operations, cancellation and
   streaming, with source links and examples checked against real tmux. (#20)
 
+- **The Clojure `libtmux.core` reference has a "What is on here" directory for
+  sessions, windows and panes.** Each groups the functions that act on the
+  object, or read it from a capture, by what you do with it. Before, only the
+  server's directory, on `open!`, grouped any of them. (#184)
+
 ### Development
 
 - **Clojure uses the existing Gradle build and publication workflow.** The
