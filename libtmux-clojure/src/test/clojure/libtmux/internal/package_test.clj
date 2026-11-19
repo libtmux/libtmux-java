@@ -98,6 +98,44 @@
     (is (<= 3 (count rows)))
     (is (= #{} (set/difference public listed)) "Every libtmux.core function is in the directory")))
 
+(defn- object-directory
+  "Reads the `### What is on here: <object>` directory of a docstring as libtmux.org folds it.
+  Returns `:rows` as [title references] and `:problems`, one per row the site would not draw:
+  a row is a bold-led paragraph followed by a list of `Label: [[reference]]` items."
+  [doc object]
+  (let [text (str/replace (str/trim doc) #"\n  " "\n")
+        [_ section] (re-find (re-pattern (str "(?sm)^### What is on here: " object "$(.*?)(?=^#{1,4} |\\z)")) text)
+        [_intro & blocks] (str/split (str/trim (or section "")) #"\n\n")
+        rows (for [[guidance items] (partition-all 2 blocks)
+                   :let [title (second (re-find #"^\*\*([^*]+)\*\*" guidance))
+                         entries (mapv second (re-seq #"(?m)^- [^:\[`]{1,40}: (.+(?:\n  .+)*)$" (str items)))]]
+               {:title title :guidance guidance :entries entries})]
+    {:rows (vec (for [{:keys [title entries]} rows]
+                  [title (into [] (mapcat #(map second (re-seq #"\[\[([^\]]+)\]\]" %))) entries)]))
+     :problems (vec (mapcat (fn [{:keys [title guidance entries]}]
+                              (concat (when-not title [(str "Row without a bold lead: " guidance)])
+                                      (when-not (seq entries) [(str "Row without labelled references: " (or title guidance))])
+                                      (for [listed entries
+                                            :when (seq (str/replace listed #"\[\[[^\]]+\]\]|\band\b|[\s,]" ""))]
+                                        (str "Prose among references in " title ": " listed))))
+                            rows))}))
+
+(deftest session-window-and-pane-directories-fold-into-rows
+  (let [doc (:doc (meta (the-ns 'libtmux.core)))]
+    (doseq [object ["sessions" "windows" "panes"]
+            :let [{:keys [rows problems]} (object-directory doc object)]]
+      (is (<= 3 (count rows)) (str "Rows in the " object " directory"))
+      (is (empty? problems) (str/join "; " problems)))))
+
+(deftest object-directory-check-rejects-what-the-site-would-not-draw
+  (let [row "**Finding.** Text.\n\n- Acquire: [[sessions!]]\n\n"
+        read (fn [& blocks] (object-directory (apply str "### What is on here: sessions\n\nIntro.\n\n" blocks) "sessions"))]
+    (is (= [3 []] ((juxt (comp count :rows) :problems) (read row row row))))
+    (is (seq (:problems (read row "**Finding.** Text.\n\n- Acquire: [[sessions!]] and prose\n\n" row))))
+    (is (seq (:problems (read row "Finding.\n\n- Acquire: [[sessions!]]\n\n" row))))
+    (is (seq (:problems (read row "**Finding.** Text with no list.\n\n" row))))
+    (is (empty? (:rows (object-directory "### What is on here: windows\n\nIntro.\n\n" "sessions"))))))
+
 (defn- with-test-sources [body]
   (let [directory (.toFile (Files/createTempDirectory "clj-runner-"
                                                       (make-array java.nio.file.attribute.FileAttribute 0)))
