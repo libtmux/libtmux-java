@@ -21,6 +21,338 @@ Explicit tmux effects through [`open!`][api:libtmux.core/open!] and
 Captured maps retain opaque Java references; [`libtmux.data`][api:libtmux.data]
 traverses them locally.
 
+The functions that act on a server are grouped on
+[`open!`][api:libtmux.core/open!]. Sessions, windows
+and panes each have a directory below, grouped by what you do with them.
+
+### What is on here: sessions
+
+A session is a captured map with `:session/` keys whose `:tmux/ref` is the Java
+Session. Functions that act on a session take that reference, and functions
+that read a capture take the map. They fall into a few groups:
+
+**Finding sessions.** [`sessions!`][api:libtmux.core/sessions!] takes a fresh
+snapshot and returns every
+captured session, and [`find-session!`][api:libtmux.core/find-session!] looks
+one up by exact name and returns
+`nil` when tmux has none. [`snapshot!`][api:libtmux.core/snapshot!] captures
+sessions with their windows and
+panes, and [`refresh!`][api:libtmux.core/refresh!] reacquires one session from
+its reference.
+
+- Acquire: [`sessions!`][api:libtmux.core/sessions!],
+[`find-session!`][api:libtmux.core/find-session!],
+[`snapshot!`][api:libtmux.core/snapshot!]
+- Refresh: [`refresh!`][api:libtmux.core/refresh!]
+
+**Selecting and comparing.** Filter captured sessions with an ordinary Clojure
+predicate or with [`libtmux.data/matching`][api:libtmux.data/matching], then
+take the result with
+[`libtmux.data/exactly-one`][api:libtmux.data/exactly-one] or
+[`libtmux.data/one-or-none`][api:libtmux.data/one-or-none].
+[`libtmux.data/entity-key`][api:libtmux.data/entity-key] and
+[`libtmux.data/same-entity?`][api:libtmux.data/same-entity?] compare identities
+without asking tmux, and [`libtmux.data/data`][api:libtmux.data/data] strips the
+references to leave
+plain EDN.
+
+- Filter: [`libtmux.data/matching`][api:libtmux.data/matching],
+[`libtmux.data/predicate`][api:libtmux.data/predicate]
+- Take one: [`libtmux.data/exactly-one`][api:libtmux.data/exactly-one],
+[`libtmux.data/one-or-none`][api:libtmux.data/one-or-none]
+- Compare: [`libtmux.data/entity-key`][api:libtmux.data/entity-key],
+[`libtmux.data/same-entity?`][api:libtmux.data/same-entity?]
+- Plain EDN: [`libtmux.data/data`][api:libtmux.data/data]
+
+**Creating, renaming and removing.**
+[`new-session!`][api:libtmux.core/new-session!] creates a detached session
+from an options map, rejects unknown keys, and returns a fresh capture of it.
+[`rename!`][api:libtmux.core/rename!] renames a session or window, and
+[`kill!`][api:libtmux.core/kill!] removes a session,
+window or pane.
+
+- Create: [`new-session!`][api:libtmux.core/new-session!]
+- Rename: [`rename!`][api:libtmux.core/rename!]
+- Remove: [`kill!`][api:libtmux.core/kill!]
+
+**Working inside a session.** [`libtmux.data/windows`][api:libtmux.data/windows]
+and [`libtmux.data/panes`][api:libtmux.data/panes]
+read a session's windows and panes from a capture without asking tmux again, and
+[`libtmux.data/active-window`][api:libtmux.data/active-window] and
+[`libtmux.data/active-pane`][api:libtmux.data/active-pane] pick the active
+ones. [`new-window!`][api:libtmux.core/new-window!] adds a window,
+[`link-window!`][api:libtmux.core/link-window!] links an existing window
+into the session, and [`move-window!`][api:libtmux.core/move-window!] moves one
+to it at an index.
+
+- Read a capture: [`libtmux.data/windows`][api:libtmux.data/windows],
+[`libtmux.data/panes`][api:libtmux.data/panes],
+[`libtmux.data/active-window`][api:libtmux.data/active-window],
+[`libtmux.data/active-pane`][api:libtmux.data/active-pane]
+- Add windows: [`new-window!`][api:libtmux.core/new-window!],
+[`link-window!`][api:libtmux.core/link-window!],
+[`move-window!`][api:libtmux.core/move-window!]
+
+**Clients.** [`switch-client!`][api:libtmux.core/switch-client!] points a client
+from [`clients!`][api:libtmux.core/clients!] at a session.
+[`libtmux.control/attach!`][api:libtmux.control/attach!] attaches a control
+connection to a captured session;
+it needs tmux 3.7 or newer.
+
+- Switch: [`switch-client!`][api:libtmux.core/switch-client!],
+[`clients!`][api:libtmux.core/clients!]
+- Control: [`libtmux.control/attach!`][api:libtmux.control/attach!]
+
+**Options, hooks, and environment.** [`options!`][api:libtmux.core/options!]
+reads the options set locally
+on a session, or the effective inherited ones;
+[`set-option!`][api:libtmux.core/set-option!] sets an override
+and [`unset-option!`][api:libtmux.core/unset-option!] restores inheritance.
+[`hooks!`][api:libtmux.core/hooks!] returns its hooks, which
+[`set-hook!`][api:libtmux.core/set-hook!] replaces,
+[`append-hook!`][api:libtmux.core/append-hook!] extends and
+[`unset-hook!`][api:libtmux.core/unset-hook!] removes.
+[`environment!`][api:libtmux.core/environment!] returns the values and the names
+marked removed;
+[`set-environment!`][api:libtmux.core/set-environment!] sets a value,
+[`unset-environment!`][api:libtmux.core/unset-environment!] drops the local
+entry
+so the name is inherited, and
+[`remove-environment!`][api:libtmux.core/remove-environment!] masks the name
+from new
+processes. [`expand!`][api:libtmux.core/expand!] evaluates a tmux format at the
+session.
+
+- Options: [`options!`][api:libtmux.core/options!],
+[`set-option!`][api:libtmux.core/set-option!],
+[`unset-option!`][api:libtmux.core/unset-option!]
+- Hooks: [`hooks!`][api:libtmux.core/hooks!],
+[`set-hook!`][api:libtmux.core/set-hook!],
+[`append-hook!`][api:libtmux.core/append-hook!],
+[`unset-hook!`][api:libtmux.core/unset-hook!]
+- Environment: [`environment!`][api:libtmux.core/environment!],
+[`set-environment!`][api:libtmux.core/set-environment!],
+[`unset-environment!`][api:libtmux.core/unset-environment!],
+[`remove-environment!`][api:libtmux.core/remove-environment!]
+- Formats: [`expand!`][api:libtmux.core/expand!]
+
+### What is on here: windows
+
+A window is a captured map with `:window/` keys, one for each session that
+holds it, so a window linked into two sessions appears twice. Its `:tmux/ref` is
+the Java Window. Functions that act on a window take that reference, and
+functions that read a capture take the map. They fall into a few groups:
+
+**Finding windows.** [`windows!`][api:libtmux.core/windows!] takes a fresh
+snapshot and returns every
+captured window occurrence. [`libtmux.data/windows`][api:libtmux.data/windows]
+reads a snapshot's or a
+session's windows without asking tmux again, and
+[`libtmux.data/active-window`][api:libtmux.data/active-window]
+picks a session's active one. [`snapshot!`][api:libtmux.core/snapshot!] captures
+windows with their panes,
+and [`refresh!`][api:libtmux.core/refresh!] reacquires one window, keeping its
+placement.
+
+- Acquire: [`windows!`][api:libtmux.core/windows!],
+[`snapshot!`][api:libtmux.core/snapshot!]
+- Read a capture: [`libtmux.data/windows`][api:libtmux.data/windows],
+[`libtmux.data/active-window`][api:libtmux.data/active-window]
+- Refresh: [`refresh!`][api:libtmux.core/refresh!]
+
+**Selecting and comparing.** Filter captured windows with an ordinary Clojure
+predicate or with [`libtmux.data/matching`][api:libtmux.data/matching], then
+take the result with
+[`libtmux.data/exactly-one`][api:libtmux.data/exactly-one] or
+[`libtmux.data/one-or-none`][api:libtmux.data/one-or-none].
+[`libtmux.data/same-entity?`][api:libtmux.data/same-entity?] compares the
+physical window and
+[`libtmux.data/same-link?`][api:libtmux.data/same-link?] also its session and
+index, both without asking
+tmux. [`libtmux.data/data`][api:libtmux.data/data] strips the references to
+leave plain EDN.
+
+- Filter: [`libtmux.data/matching`][api:libtmux.data/matching],
+[`libtmux.data/predicate`][api:libtmux.data/predicate]
+- Take one: [`libtmux.data/exactly-one`][api:libtmux.data/exactly-one],
+[`libtmux.data/one-or-none`][api:libtmux.data/one-or-none]
+- Compare: [`libtmux.data/entity-key`][api:libtmux.data/entity-key],
+[`libtmux.data/link-key`][api:libtmux.data/link-key],
+[`libtmux.data/same-entity?`][api:libtmux.data/same-entity?],
+[`libtmux.data/same-link?`][api:libtmux.data/same-link?]
+- Plain EDN: [`libtmux.data/data`][api:libtmux.data/data]
+
+**Creating, renaming and removing.**
+[`new-window!`][api:libtmux.core/new-window!] creates a window in a
+session from an options map, rejects unknown keys, and returns a fresh capture
+of it. [`rename!`][api:libtmux.core/rename!] renames a window or session, and
+[`kill!`][api:libtmux.core/kill!] removes a window,
+session or pane.
+
+- Create: [`new-window!`][api:libtmux.core/new-window!]
+- Rename: [`rename!`][api:libtmux.core/rename!]
+- Remove: [`kill!`][api:libtmux.core/kill!]
+
+**Linking and moving.** [`link-window!`][api:libtmux.core/link-window!] links a
+window into a session and
+[`unlink-window!`][api:libtmux.core/unlink-window!] removes one placement.
+[`move-window!`][api:libtmux.core/move-window!] moves a window to a
+session at an index.
+
+- Link: [`link-window!`][api:libtmux.core/link-window!],
+[`unlink-window!`][api:libtmux.core/unlink-window!]
+- Move: [`move-window!`][api:libtmux.core/move-window!]
+
+**Selecting, sizing and arranging.** [`select!`][api:libtmux.core/select!]
+selects a window or pane.
+[`resize!`][api:libtmux.core/resize!] sets the cell dimensions of a window or
+pane, and [`apply-layout!`][api:libtmux.core/apply-layout!]
+applies a tmux layout string to a window.
+
+- Select: [`select!`][api:libtmux.core/select!]
+- Size and layout: [`resize!`][api:libtmux.core/resize!],
+[`apply-layout!`][api:libtmux.core/apply-layout!]
+
+**Panes in a window.** [`libtmux.data/panes`][api:libtmux.data/panes] reads a
+window's panes from a
+capture without asking tmux again, and
+[`libtmux.data/active-pane`][api:libtmux.data/active-pane] picks its
+active one. [`join-pane!`][api:libtmux.core/join-pane!] moves an existing pane
+into the window.
+
+- Read a capture: [`libtmux.data/panes`][api:libtmux.data/panes],
+[`libtmux.data/active-pane`][api:libtmux.data/active-pane]
+- Move a pane in: [`join-pane!`][api:libtmux.core/join-pane!]
+
+**Options and hooks.** [`options!`][api:libtmux.core/options!] reads the options
+set locally on a window,
+or the effective inherited ones; [`set-option!`][api:libtmux.core/set-option!]
+sets an override and
+[`unset-option!`][api:libtmux.core/unset-option!] restores inheritance.
+[`hooks!`][api:libtmux.core/hooks!] returns its hooks, which
+[`set-hook!`][api:libtmux.core/set-hook!] replaces,
+[`append-hook!`][api:libtmux.core/append-hook!] extends and
+[`unset-hook!`][api:libtmux.core/unset-hook!] removes.
+[`expand!`][api:libtmux.core/expand!] evaluates a tmux format at the window.
+
+- Options: [`options!`][api:libtmux.core/options!],
+[`set-option!`][api:libtmux.core/set-option!],
+[`unset-option!`][api:libtmux.core/unset-option!]
+- Hooks: [`hooks!`][api:libtmux.core/hooks!],
+[`set-hook!`][api:libtmux.core/set-hook!],
+[`append-hook!`][api:libtmux.core/append-hook!],
+[`unset-hook!`][api:libtmux.core/unset-hook!]
+- Formats: [`expand!`][api:libtmux.core/expand!]
+
+### What is on here: panes
+
+A pane is a captured map with `:pane/` keys, one for each window that holds it.
+Its `:tmux/ref` is the Java Pane. Functions that act on a pane take that
+reference, and functions that read a capture take the map. They fall into a few
+groups:
+
+**Finding panes.** [`panes!`][api:libtmux.core/panes!] takes a fresh snapshot
+and returns every captured
+pane occurrence. [`libtmux.data/panes`][api:libtmux.data/panes] reads the panes
+of a snapshot, session
+or window from a capture, and
+[`libtmux.data/active-pane`][api:libtmux.data/active-pane] picks the active pane
+of a window or session. [`snapshot!`][api:libtmux.core/snapshot!] captures panes
+with their windows and
+sessions, and [`refresh!`][api:libtmux.core/refresh!] reacquires one pane,
+keeping its placement.
+
+- Acquire: [`panes!`][api:libtmux.core/panes!],
+[`snapshot!`][api:libtmux.core/snapshot!]
+- Read a capture: [`libtmux.data/panes`][api:libtmux.data/panes],
+[`libtmux.data/active-pane`][api:libtmux.data/active-pane]
+- Refresh: [`refresh!`][api:libtmux.core/refresh!]
+
+**Selecting and comparing.** Filter captured panes with an ordinary Clojure
+predicate or with [`libtmux.data/matching`][api:libtmux.data/matching], then
+take the result with
+[`libtmux.data/exactly-one`][api:libtmux.data/exactly-one] or
+[`libtmux.data/one-or-none`][api:libtmux.data/one-or-none].
+[`libtmux.data/same-entity?`][api:libtmux.data/same-entity?] compares the
+physical pane and
+[`libtmux.data/same-link?`][api:libtmux.data/same-link?] also its window and
+session, both without asking
+tmux. [`libtmux.data/data`][api:libtmux.data/data] strips the references to
+leave plain EDN.
+
+- Filter: [`libtmux.data/matching`][api:libtmux.data/matching],
+[`libtmux.data/predicate`][api:libtmux.data/predicate]
+- Take one: [`libtmux.data/exactly-one`][api:libtmux.data/exactly-one],
+[`libtmux.data/one-or-none`][api:libtmux.data/one-or-none]
+- Compare: [`libtmux.data/entity-key`][api:libtmux.data/entity-key],
+[`libtmux.data/link-key`][api:libtmux.data/link-key],
+[`libtmux.data/same-entity?`][api:libtmux.data/same-entity?],
+[`libtmux.data/same-link?`][api:libtmux.data/same-link?]
+- Plain EDN: [`libtmux.data/data`][api:libtmux.data/data]
+
+**Splitting, moving and removing.**
+[`split-pane!`][api:libtmux.core/split-pane!] splits a pane from an options
+map that picks the direction and size, and returns a fresh capture of the new
+pane. [`join-pane!`][api:libtmux.core/join-pane!] moves an existing pane into a
+window, and [`kill!`][api:libtmux.core/kill!] removes
+a pane.
+
+- Split: [`split-pane!`][api:libtmux.core/split-pane!]
+- Move: [`join-pane!`][api:libtmux.core/join-pane!]
+- Remove: [`kill!`][api:libtmux.core/kill!]
+
+**Selecting and resizing.** [`select!`][api:libtmux.core/select!] selects a pane
+or window, and
+[`resize!`][api:libtmux.core/resize!] sets the cell dimensions of a pane or
+window.
+
+- Select: [`select!`][api:libtmux.core/select!]
+- Size: [`resize!`][api:libtmux.core/resize!]
+
+**Typing into a pane.** [`send-literal!`][api:libtmux.core/send-literal!] sends
+text as written and
+[`send-keys!`][api:libtmux.core/send-keys!] sends a vector of tmux key names; a
+completed send does not mean
+the application is ready. [`paste-buffer!`][api:libtmux.core/paste-buffer!]
+pastes a buffer that
+[`set-buffer!`][api:libtmux.core/set-buffer!] stored.
+
+- Type: [`send-literal!`][api:libtmux.core/send-literal!],
+[`send-keys!`][api:libtmux.core/send-keys!]
+- Paste: [`paste-buffer!`][api:libtmux.core/paste-buffer!]
+
+**Reading a pane.** [`capture!`][api:libtmux.core/capture!] returns a pane's
+lines, with scrollback when
+`:from` is `:history`. [`await-text!`][api:libtmux.core/await-text!] waits
+within a positive Duration for text
+to appear and returns a keyword that names the outcome.
+[`libtmux.control/subscribe!`][api:libtmux.control/subscribe!] observes new
+output on a control connection, and
+[`expand!`][api:libtmux.core/expand!] evaluates a tmux format at the pane.
+
+- Read: [`capture!`][api:libtmux.core/capture!],
+[`await-text!`][api:libtmux.core/await-text!]
+- Observe: [`libtmux.control/subscribe!`][api:libtmux.control/subscribe!]
+- Formats: [`expand!`][api:libtmux.core/expand!]
+
+**Options and hooks.** [`options!`][api:libtmux.core/options!] reads the options
+set locally on a pane, or
+the effective inherited ones; [`set-option!`][api:libtmux.core/set-option!] sets
+an override and
+[`unset-option!`][api:libtmux.core/unset-option!] restores inheritance.
+[`hooks!`][api:libtmux.core/hooks!] returns its hooks, which
+[`set-hook!`][api:libtmux.core/set-hook!] replaces,
+[`append-hook!`][api:libtmux.core/append-hook!] extends and
+[`unset-hook!`][api:libtmux.core/unset-hook!] removes.
+
+- Options: [`options!`][api:libtmux.core/options!],
+[`set-option!`][api:libtmux.core/set-option!],
+[`unset-option!`][api:libtmux.core/unset-option!]
+- Hooks: [`hooks!`][api:libtmux.core/hooks!],
+[`set-hook!`][api:libtmux.core/set-hook!],
+[`append-hook!`][api:libtmux.core/append-hook!],
+[`unset-hook!`][api:libtmux.core/unset-hook!]
+
 ### [`libtmux.core/append-hook!`][libtmux.core]
 
 `(append-hook! value event argv)`
