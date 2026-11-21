@@ -16,3 +16,6 @@ upload under the repository's **Settings → Social preview**.
 Clojure and its core.async companion use the Clojure cog in their module-local
 `assets/` directories. [Clojure provenance](clojure-source.json) records the
 source revision and file digests independently of the Java artwork above.
+
+The sharing card comes from `assets/java/library/opengraph-light.png`
+at kit revision `4b86a9d9158d7c6d52cd635d59c92a04b48b960f`.
