@@ -1,231 +1,136 @@
 # Writing
 
-How this project writes prose, for humans and agents alike. It governs
-`README.md`, `CHANGELOG.md`, release notes, commit messages, CLI and help
-text, error messages, API documentation, source comments, and migration
-guides.
+Repository-specific rules for `README.md`, per-module and root `CHANGELOG.md`
+files, `MIGRATION.md`, release notes, commit messages, CLI and help text, error
+messages, Javadoc, Clojure docstrings, and source comments in `libtmux-java`.
 
-For build, test, and pull request workflow, see
+Organization-wide voice, CommonMark 80-column wrapping, unwrapped pull request
+and issue bodies, commit and pull request shape, and slop-free prose live in
+[`libtmux/.github` `WRITING.md`](https://github.com/libtmux/.github/blob/main/WRITING.md).
+For build, test, and pull request gates, see
 [`CONTRIBUTING.md`](CONTRIBUTING.md).
-
-Markdown files here wrap at 80 columns. A pull request or issue body does not:
-GitHub renders a single newline as a space inside a file and as a line break in
-a comment, so a hard-wrapped comment body arrives as ragged stubs.
-
-## README
-
-The README is the door; the guides under `docs/guide/` and the Javadoc are the
-manual. It answers what this is, how to install it, what normal use looks like,
-and what contract you are buying into — in that order, and then it stops.
-Anything a reader does not need in order to run the package belongs on
-libtmux.org or under `docs/`, with a link from here.
 
 ## README shape
 
-Readers skim it, so it follows one shape:
+The root `README.md` and each module `README.md` are the door; the guides under
+`docs/guide/`, `libtmux.org`, and Javadoc are the manual.
 
-- **The header is a logo, a centred title and a badge row.** CI, Maven Central,
-  libtmux.org and the license. A badge or link for a page that does not return
-  200 does not go in.
-- **The quick start comes first.** Install, then one example that runs.
-- **Sections are tasks, in the reader's words.** A `##` heading says what the
-  reader is doing, such as `Find sessions, windows, and panes`. A `###` beneath
-  it links the call and gives its job in plain words, as in
-  `` ### [`Server.sessions()`][server]: what tmux has now ``.
-- **Each subsection builds up the same way.** One sentence names the call and
-  links its siblings, a short example follows, then one line says what it
-  prints. A note, if any, is a single short one, and a `More:` link goes to the
-  guide.
-- **No paragraph runs past three lines.** A list of three or more is bullets
-  with a bold lead, and a long contract is a link to the page that holds it.
-- **Every API, tool, and command named in prose is a link** to its libtmux.org
-  page, written as a reference-style link whose definitions sit at the bottom of
-  the file. A link never sits inside a code fence, where it would render as
-  text.
-- **An index stays an index.** The module list, the package map, and a heading
-  for each directory keep their place; sections are added beside them. Under a
-  module heading: one line saying what it is, then a link line for its API
-  reference, registry page and changelog.
-- **No feature inventory.** A list of what is "implemented" is replaced by
-  sections and examples that show it.
-- **Requirements are floors a reader can act on.** "JDK 25 or newer", not the
-  patch version of the toolchain someone happened to use. No CI matrix
-  narration, and no kernel or libc trivia: link the page that holds it.
-- **Leave out what a reader assumes.** That examples are tested, how the docs
-  are built, what the checks cover, and "evidence", "qualification" or
-  "contract" boilerplate.
-- **Examples start with their imports.** A reader can paste one into a file and
-  run it. A later block in the same section may continue from an earlier one,
-  and its `// Given:` line names what it assumes.
-- **Examples start and clean up their own tmux server through the library.**
-  The program starts a private server with `Server.start`, and closing it stops
-  the server and removes its directory. A `tmux` or `rm` command around an
-  example marks a missing API call, not a step to document.
-- **Every displayed example comes from a file CI runs.** Java and Scala fences
-  run in the `docs` module, Kotlin fences in `libtmux-kotlin`. A fence CI does
-  not run carries a directive that says why.
-- **The README shows the features the port has.** Each of these gets a section
-  with an API-linked heading and an example: queries and filters, the planner
-  (`TmuxFilters.format` shows what tmux filters and what stays local), chaining
-  and batching, and control mode. A feature the port lacks gets no section.
+- **Header.** Open with the logo block, a centered `# libtmux for Java` title,
+  a subtitle surfacing [Java](https://libtmux.org/en/java/),
+  [Kotlin](https://libtmux.org/en/kotlin/),
+  [Scala](https://libtmux.org/en/scala/), and
+  [Clojure](https://libtmux.org/en/clojure/) on `libtmux.org`, and the four
+  badges (CI, Maven Central, `libtmux.org`, license). Link only pages that
+  return 200.
+- **Quick start first.** Show `io.github.libtmux:libtmux-bom` coordinates for
+  both Gradle and Maven, then one runnable example starting its own server with
+  `Server.start`.
+- **Task and API headings.** Make each `##` heading a task in the reader's
+  words (`Find sessions, windows, and panes`), and each `###` heading a linked
+  API call and its job
+  (`### [\`Server.sessions()\`][server]: what tmux has now`).
+- **Scannability.** Keep paragraphs and bullets to three lines or fewer, hold
+  code lines in fences within 80 columns, and omit manual contents walls,
+  feature inventories, CI matrix narration, and inline BibTeX (`CITATION.cff`
+  lives at root).
+- **Reference links.** Link every public `libtmux` type, tool, and command named
+  in prose to its `libtmux.org` reference page via reference-style definitions
+  at the bottom of the file. Never put Markdown links inside code fences.
+- **Module and package indexes.** Keep the `## Modules` bullet list and each
+  `### [\`<module>\`](https://github.com/libtmux/libtmux-java/tree/master/<module>)`
+  heading in root `README.md`, and keep the `## Package map` and exported
+  package headings in `libtmux/README.md`.
+- **Closing.** End with short bold-lead bullets under `## What it leaves out`
+  and `## Support and status`, followed by compact links and the
+  [libtmux.org](https://libtmux.org/) family line.
 
-Four things near the top are compatibility claims, and they move together:
+Four compatibility claims near the top move together:
 
-- **The title is `libtmux for Java`.** Every port titles its README the same
-  way.
-- **The status notice is the shared sentence, word for word.** "Releases are
-  numbered `0.1.N`, and each release increments `N`. The API is not settled:
-  any release may change or remove exported identifiers, and the changelog
-  marks each break. Pin an exact version to avoid one." Every port words it
-  identically. `CHANGELOG.md` and the `Support and status` section say the same
-  thing in the same words.
-- **The requirements are JDK 25 or newer, and tmux 3.3a through 3.8.** The tmux
-  range is not a claim — the matrix runs every lane of it — so it may not drift
-  from `workflows/tmux-matrix.yml`.
-- **Coordinates are group `io.github.libtmux`, imported through
-  `libtmux-bom`**, shown for both Gradle and Maven, because a reader arrives
-  with one of the two already open.
+- **Title:** `libtmux for Java`.
+- **Status notice (word for word):** "Releases are numbered `0.1.N`, and each
+  release increments `N`. The API is not settled: any release may change or
+  remove exported identifiers, and the changelog marks each break. Pin an exact
+  version to avoid one." Keep this wording identical across `README.md` and
+  `CHANGELOG.md`.
+- **Floors:** JDK 25 or newer, and tmux 3.3a through 3.8 (kept in lockstep with
+  `gradle/tmux-lanes.json`).
+- **Coordinates:** group `io.github.libtmux`, imported via `libtmux-bom`.
 
-Every Java block in the README is compiled and then run against a real tmux by
-[the documentation module](../docs/README.md#how-these-pages-are-tested). A snippet is a test: it cannot be illustrative
-pseudo-code, an elided `try` block, or a call that no longer exists, and one
-that stops working fails the build. A block that is meant not to compile says so
-and is checked for being rejected.
+### Executed examples
 
-Claims have to be falsifiable. "Zero runtime dependencies" is one. A performance
-claim carries its number and the command that reproduces it, or it does not
-appear.
+Every displayed code fence is verified by CI unless a directive states why it
+cannot run — see
+[`docs/README.md`](../docs/README.md#how-these-pages-are-tested):
 
-Fixed headings are literal: `Quick start`, `What it leaves out`, `Support and
-status`, `Documentation`. A reader scanning for how to install does not look
-under a heading called something clever, and neither does an agent. What the
-package leaves out is a bulleted list with a bold lead on each item, so that
-the contract is read before it is relied on.
-
-Badges are metadata, not an introduction. Each of the four present — CI, Maven
-Central, libtmux.org, license — answers a question a reader would otherwise have
-to go and ask. A fifth needs the same defence.
-
-No screenshot carries information that exists only in the screenshot. Images go
-stale, do not survive grep, and reach a screen reader as nothing.
+- Java and Scala fences compile and run against real tmux in `docs`, Kotlin
+  fences run in `libtmux-kotlin`, and Clojure fences run in `integration-tests`.
+- Self-contained examples start with their `import` lines and manage a private
+  server via `Server.start` (`try`-with-resources closes and removes it);
+  follow-on snippets declare assumed bindings on a `// Given:` first line.
+- Keep `// →` result assertions on a single line so the snippet rewriter can
+  parse the expression.
+- Claims must be falsifiable ("No runtime dependencies" on `libtmux`, or a
+  benchmark number paired with the command that reproduces it).
 
 ## Migration notes
 
-Put API breakages and upgrade instructions in the root
-[`MIGRATION.md`](../MIGRATION.md) file. Cover renames, removals, and changes to
-defaults or failure contracts with a concrete replacement or instructions for
-callers. Add notes under `## Next release`; the maintainer assigns the version
-when releasing.
+Put API breakages and upgrade instructions under `## Next release` in the root
+[`MIGRATION.md`](../MIGRATION.md); the maintainer assigns the version when
+cutting a release. Cover renames, removals, and changed defaults or failure
+contracts with concrete replacements.
 
-The README and getting-started guide show the current API. Link to
-`MIGRATION.md` with a short upgrading sentence instead of embedding migration
-sections there. Keep the changelog entry brief: state the impact and
-replacement, then link to the migration notes for detailed steps.
-
-Migration examples remain part of the documentation suite. Use its `does-not-compile`
-directive for obsolete Java examples that demonstrate a rejected API; current
-replacement examples must compile and run.
+Keep `README.md` and `docs/guide/` on the current API and link `MIGRATION.md`
+instead of embedding migration sections. Use the `does-not-compile` snippet
+directive in `MIGRATION.md` for rejected legacy Java calls; replacement examples
+must compile and run.
 
 ## Changelog
 
-`CHANGELOG.md` is a ledger for the people who consume releases, not a rendering
-of `git log`. The question a reader arrives with is whether an entry affects
-them, so one change gets one entry, and the entry leads with what they will
-observe.
+`CHANGELOG.md` is a consumer ledger, not `git log`. Place unreleased entries
+under `## Unreleased` grouped by `Added`, `Changed`, `Fixed`, `Removed`,
+`Documented`, or `Security` (newest release first, dated `YYYY-MM-DD`).
 
-Entries land under `## Unreleased`. The maintainer assigns the version when
-cutting a release, so nothing written here predicts one.
+Each published module keeps its own `CHANGELOG.md` beside its `README.md` (and
+ships it inside its JAR): `libtmux/CHANGELOG.md` for core changes,
+`libtmux-mcp/CHANGELOG.md` for MCP changes, and likewise across the remaining
+published modules. Root `CHANGELOG.md` holds cross-module changes, docs, CI,
+tests, build and release tooling, and `libtmux-bom`. Put each entry in one file:
 
-Each published module keeps its own `CHANGELOG.md` beside its README, and an
-entry goes in the file of the module it changes: `libtmux-mcp/CHANGELOG.md` for
-the MCP server, `libtmux/CHANGELOG.md` for the core, and likewise for the other
-eight. The root `CHANGELOG.md` holds what belongs to no single module: a change
-that spans modules, and documentation, CI, tests, build and release tooling and
-`libtmux-bom`, whichever module they concern. An entry lives in exactly one
-file. The modules are released together, so a release heading appears in each
-module's file from the release that first shipped the module, and a release with
-nothing for it says ``No entries for `libtmux-mcp`.`` under that heading, and
-the root file says `No entries that span modules.` under a release with none.
-A link into the repository is relative to the file that holds it, so one in a
-module's changelog starts with `../`.
-
-Group under `Added`, `Changed`, `Fixed`, `Removed`, `Documented`, or `Security`,
-newest release first, dated `YYYY-MM-DD`.
-
-An entry opens with a bold clause naming what changed, then gives the prose that
-makes it decidable:
+- Every module shares the release version; a module with no changes in a release
+  records ``No entries for `<module>`.`` under that heading, and root
+  `CHANGELOG.md` records `No entries that span modules.` when none apply.
+- Relative repository links inside `<module>/CHANGELOG.md` start with `../`.
+- Open each bullet with a bold clause naming the literal identifier
+  (`Pane.capture`, `LIBTMUX_TOOLSETS`, `--rerun-tasks`, `tmux://capabilities`)
+  and a concrete verb (`add`, `fix`, `remove`, `reject`, `now`, `no longer`),
+  stating any changed default or replacement directly:
 
 ```markdown
 - **`capture_since` now reports an observe-only tmux effect.** Reading from a
-  cursor leaves tmux state unchanged, so the capability metadata no longer
-  overstates what the call changes.
+  cursor leaves tmux state unchanged, so capability metadata no longer
+  overstates what the call mutates.
 ```
-
-Name identifiers literally: `Pane.capture`, `LIBTMUX_TOOLSETS`,
-`--rerun-tasks`, `tmux://capabilities`. Lead with a concrete verb: add, fix,
-remove, reject, `now`, or `no longer`.
-
-State a changed default explicitly, and an incompatibility more explicitly
-still, with the way forward in the same entry.
-
-Do not sell a fix: "no longer returns another command's reply", not "improves
-reliability". Do not describe effort, and never write "various fixes" — a set of
-changes too small to enumerate is reported as no user-visible behaviour having
-changed. A refactor nothing can observe is not an entry at all.
-
-The API is not settled, so an incompatibility is expected rather than
-exceptional. It still gets stated plainly, with what to write instead.
 
 ## Release notes
 
-A release note answers a different question from the changelog: not "what
-changed" but "should I upgrade, and what do I need to know first". It is
-editorial where the changelog is exhaustive, and it may leave things out.
+Order release notes capability, then consequence, then compatibility:
 
-Order it capability, then consequence, then compatibility:
+> 0.1.2 adds streaming capture, and rejects `windowId` at pane scope rather
+> than ignoring it. Pass `scope: window` to read at window scope. JDK 25 and
+> tmux 3.3a through 3.8 are unchanged.
 
-> 0.0.1-alpha.7 adds streaming capture, and rejects `windowId` at pane scope
-> rather than ignoring it. Pass `scope: window` to read at window scope. JDK 25
-> and tmux 3.3a through 3.8 are unchanged.
-
-The title is plain — the version, optionally preceded by `libtmux for Java`.
-Never "we are excited to announce"; state what shipped.
-
-Link `CHANGELOG.md` rather than pasting it. How a release is actually cut is in
-[`RELEASING.md`](../RELEASING.md).
+Title the release with the plain version (optionally preceded by
+`libtmux for Java`) and link `CHANGELOG.md` rather than pasting it. Release
+mechanics live in [`RELEASING.md`](../RELEASING.md).
 
 ## Commit messages
 
-```
-Scope(type[detail]): concise description
+Follow the `Scope(type[detail]): concise description` format, 50-character
+subject limit (excluding trailing `(#NN)`), and 72-character `why:` / `what:`
+body rules in
+[`libtmux/.github` `WRITING.md`](https://github.com/libtmux/.github/blob/main/WRITING.md#commits-and-pull-requests):
 
-why: Explanation of necessity or impact.
-
-what:
-- Specific technical changes made
-- Focused on a single topic
-```
-
-Keep the subject to 50 characters or fewer, excluding any trailing `(#NN)` pull
-request reference, and wrap body lines at 72. Separate the `why:` and `what:`
-blocks with a blank line.
-
-Common types:
-
-- **feat**: New features or enhancements
-- **fix**: Bug fixes
-- **refactor**: Code restructuring without functional change
-- **docs**: Documentation updates
-- **chore**: Maintenance (dependencies, tooling, config)
-- **test**: Test-related updates
-- **style**: Code style and formatting
-- **java(deps)**: Dependencies
-- **java(deps[dev])**: Dev dependencies
-- **ai(rules[AGENTS])**: AI rule updates
-
-Example:
-
-```
+```text
 Pane(feat[sendKeys]): Add support for a literal flag
 
 why: Send characters without tmux interpreting them.
@@ -235,270 +140,103 @@ what:
 - Pass -l when it is set
 ```
 
-Use a heredoc so the formatting survives the shell:
+Repository-specific scopes alongside `feat`, `fix`, `refactor`, `docs`, `chore`,
+`test`, and `style`:
 
-```console
-$ git commit -m "$(cat <<'EOF'
-Scope(feat[detail]): Concise description
-
-why: Explanation of the change.
-
-what:
-- First change
-- Second change
-EOF
-)"
-```
-
-The rationale, the alternatives weighed, and what was rejected go in the body.
-It is the durable record — timestamped, attached to the exact diff, and free to
-maintain — which is why a source comment does not carry them.
-
-No emoji, no trailing attribution, no tool metadata.
+- `java(deps)` and `java(deps[dev])` for runtime and build/test dependencies.
+- `ai(rules[AGENTS])` for agent instruction updates.
 
 ### Release commits
 
-Never create tags. Never push tags. The owner handles tagging and tag pushes,
-because a tag triggers the publish workflow.
-
-A release commit subject is plain and short: `Tag v<version>`. The detailed why
-and what go in the body. Do not use the `Scope(type[detail]):` format for a
-release — it buries the lede.
+Never create tags and never push tags: a tag triggers the Central Portal publish
+workflow and is pushed only by the maintainer. Use `Tag v<version>` as the
+release commit subject, with `why:` and `what:` in the body.
 
 ## API documentation
 
-Clojure docstrings use minimal Markdown. Put arguments and keyword options in
-backticks. Link related public vars with `[[same-namespace-var]]` or
-`[[fully.qualified.namespace/var]]`; link namespaces the same way, and never
-use an import alias in a link. Explain why a reader would follow the link.
-The native reference resolves these links in Markdown and offline HTML and
-rejects unknown targets. Its freshness check runs with the module checks.
+### Clojure docstrings
 
-Javadoc on public API is a specification, not a programming guide. It states
-what a caller may rely on, which is the part the signature cannot state on its
-own.
+Clojure docstrings use minimal Markdown. Backtick arguments and keyword options.
+Link related public vars and namespaces with `[[same-namespace-var]]` or
+`[[fully.qualified.namespace/var]]` (never an import alias) and explain why a
+caller would follow the link. Both Markdown and offline HTML reference builds
+validate public targets during module checks.
 
-The first sentence becomes the summary in every index the tool generates, so it
-has to stand alone and end at the first period. Lead with a verb describing the
-thing:
+### Javadoc
+
+Javadoc on public API specifies the caller contract rather than implementation
+details. Make the first sentence a standalone summary ending at the first
+period, starting with a verb:
 
 ```java
 /** Captures the visible contents of this pane. */
 ```
 
-Not "This method is used to capture…". Deleting the introductory clause is the
-most useful edit available.
+Document what the Java signature cannot state on its own:
 
-Document the contract, not the mechanism. What a reader infers the API from:
+- **Nullability.** Exported packages are `@NullMarked` (enforced by NullAway in
+  JSpecify mode), so references are non-null unless annotated `@Nullable`; do
+  not repeat non-null guarantees in prose.
+- **Collections.** Immutability, whether the collection is a live view or a
+  frozen snapshot, and iteration order.
+- **Blocking, threading, and lifetime.** Whether the call blocks on tmux, thread
+  safety across callers, and behavior after the owning `Server` closes.
+- **Failure.** Checked and unchecked exceptions with the exact trigger for each.
 
-- **Nullability.** Packages are `@NullMarked`, so a reference is non-null unless
-  it carries `@Nullable`. NullAway enforces that in JSpecify mode at build time,
-  which makes the annotation the documentation — a prose sentence repeating it
-  is a second copy to keep true.
-- **What a returned collection is.** Whether it is immutable, whether it is a
-  view over live state, and what order it is in.
-- **Blocking and threading.** Whether the call waits on tmux, and whether the
-  type is safe to use from more than one thread.
-- **Failure.** Which exceptions, and the condition producing each, the unchecked
-  ones included.
-- **Lifetime.** What holds after the owning `Server` is closed.
+Tag rules:
 
-Tags carry their weight:
+- `@param` completes a phrase (`@param history scrollback lines to include, 0
+  for the visible screen only`).
+- `@return` states semantics (`@return the pane contents`), not the type.
+- `@throws` states the condition (`@throws IllegalArgumentException if
+  {@code history} is negative`).
+- `@since` records the product version that introduced the declaration.
+- `@deprecated` names the replacement and migration path, matching
+  `@Deprecated(since = ..., forRemoval = ...)`.
 
-- `@param` completes a phrase: `@param history scrollback lines to include, 0
-  for the visible screen only`. Not `@param history the history`.
-- `@return` documents semantics, not the type: `@return the pane contents, never
-  null`. Not `@return a String`.
-- `@throws` documents the condition: `@throws IllegalArgumentException if
-  {@code history} is negative`. Not "when an illegal argument is supplied".
-- `@since` carries the product version the declaration first appeared in.
-- `@deprecated` names the replacement and shows the migration, mirroring the
-  `@Deprecated(since = …, forRemoval = …)` beside it. Where removal is not
-  actually decided, do not invent a version.
-
-Architecture belongs in `package-info.java` — what the package is for, its major
-types, the threading model, what holds across all of it — so that type-level
-Javadoc stays local and contractual.
-
-Javadoc is exempt from the loss gate below, because it serves the caller rather
-than the maintainer. It is exempt from nothing else. Ceiling: a good man page
-entry.
+Put package-level architecture, major types, and threading models in
+`package-info.java` so type-level Javadoc stays local and contractual.
 
 ## Source comments
 
-A comment ships only if it passes all three gates. Fail any: delete or rewrite.
-Borderline: delete — borderline means the information is reconstructible, which
-is what makes deletion cheap.
+Keep a comment only when it passes all three gates; delete borderline comments:
 
-**Loss.** Three years from now, would losing this cost a maintainer real time
-rediscovering intent, an invariant, a constraint, or a failure mode the code and
-tests do not already make obvious?
-
-**Elite.** Would SQLite, Redis, the Go standard library, or CPython write this
-comment, at this length? Those projects state the constraint and stop. They do
-not argue with an imagined objector.
-
-**Upkeep.** Will it stay true without maintenance? A comment that hand-syncs a
-value the code owns — a count, an offset, a line reference, a duplicated
-constant — is false the first time that value moves.
-
-### Ceiling
-
-One or two lines. A comment reaching four is either carrying several facts, in
-which case split it, or arguing, in which case cut it to the fact.
-
-Rationale, alternatives weighed, and the story of how the code got here belong
-in the commit message: timestamped, attached to the exact diff, and free to
-maintain.
-
-A comment often holds both a constraint and the deliberation that found it. Keep
-the constraint, cut the deliberation. "Runs at most once per second" survives;
-"this is the right trade for now" does not.
-
-### Keep
-
-- Why over how: upstream quirks, protocol and compatibility constraints,
-  performance tradeoffs still part of the contract.
-- Invariants, preconditions, ordering, lifetime, and concurrency requirements
-  that types and tests cannot express.
-- Code that looks wrong but is not, so a later cleanup does not reintroduce the
-  bug.
-- A high-level sketch of an algorithm whose local operations do not reveal the
-  whole.
-
-### Delete
-
-- Narration of the next lines; code translated into English.
-- Restated names, types, defaults, or control flow.
-- Values duplicated from the code and hand-synced.
-- Justification, hedging, or apology for a choice.
-- Speculation about future requirements.
-- History version control already holds, including commented-out code.
-- Ticket and issue numbers. They say nothing to a reader without tracker access,
-  and they rot when the tracker moves. Unfinished work goes in the tracker, not
-  the source.
-- Transient observations — "currently", "for now", "the latest release" —
-  that go stale with no nearby edit.
-
-### The upkeep gate in practice
-
-It reaches values that track our own code. It does not reach frozen external
-facts.
-
-Bad (Delete):
-
-```java
-// There are 321 tests to complete for servers.
-```
-
-Good (Keep):
+- **Loss.** Would losing it cost a maintainer real time rediscovering an
+  invariant, protocol or tmux version constraint, ordering/lifetime rule, or
+  non-obvious failure mode that types and tests cannot express?
+- **Elite.** State the constraint in one or two lines and stop; put design
+  rationale and rejected alternatives in the commit message.
+- **Upkeep.** Never hand-sync counts, offsets, line numbers, ticket IDs, or
+  transient claims ("currently", "for now") that rot without a nearby edit.
+  Frozen external protocol facts are fine:
 
 ```java
 // Some releases report the pane ID only after the command completes,
 // so this query must stay separate.
 ```
 
-### Documentation exception
-
-Minimal usage examples, and param, return, and throws lines on public API are
-exempt from the loss gate — they serve the caller, not the maintainer. They are
-exempt from nothing else. Ceiling: a good man page entry.
-
-Javadoc summaries and `@param`, `@return`, and `@throws` tags fall under this
-exception.
+Never delete comments documenting invariants, protocol constraints, platform
+quirks, or upstream workarounds. Public API Javadoc summaries, `@param`,
+`@return`, `@throws`, and minimal usage examples are exempt from the loss gate
+because they serve callers, up to the ceiling of a concise man page entry.
 
 ## Terminology and capitalization
 
-One voice across every surface. A Javadoc comment says what a caller may rely
-on; a changelog entry says what changed; an error message names what failed;
-prose says what happens. All of them are present tense, lead with the thing
-being described, and stop.
-
-The most useful editing operation is deleting the introductory sentence.
-
-| Instead of | Prefer |
-| --- | --- |
-| "We added…" | "`Pane` now supports…" |
-| "New and improved" | "`Pane` now…" |
-| "powerful", "seamless" | state the capability |
-| "easily", "simply", "just" | omit |
-| "robust" | name the failure that is handled |
-| "comprehensive" | name what is covered |
-| "production-ready" | state the guarantee |
-| "optimized" | give the magnitude |
-| "various fixes" | name the components |
-| "under the hood" | omit unless observable |
-| "please note that" | state the fact |
-| "leverage", "utilize" | "use" |
-| "delve into" | "read", or omit |
-| "best practices" | name the practice |
-| "in order to" | "to" |
-
-Spell the project's own terms one way, everywhere. Grep is part of debugging,
-users paste error text into a search box, and an agent reasoning across files
-has nothing but the string:
-
-- **tmux** is lowercase, always, including at the start of a sentence.
-- **Javadoc** is capitalized; **JDK** and **JVM** are upper case. "Java 25" and
-  "JDK 25" both appear upstream — this project writes **JDK 25**.
-- A **pane**, **window**, **session**, and **server** are what tmux calls them.
-  Do not introduce a synonym for one.
-- Write the identifier, not a description of it: `LIBTMUX_TOOLSETS=inspect`,
-  not "the toolset environment variable"; `--rerun-tasks`, not "the rerun flag";
-  `/tmp/libtmux-java-test/`, not "the test socket directory".
-
-Treat AI slop as review-hostile noise. The goal is information density:
-
-- **AI signatures.** No "Generated by", no conversational filler, no unexplained
-  emoji, no tool metadata.
-- **Brittle references.** No hard-coded line numbers, fragile file counts, dated
-  "as of" claims, bare SHAs, or local absolute paths — unless they are strict
-  evidentiary artefacts such as a benchmark log.
-- **Diff narration.** Do not restate what moved, was renamed, or was removed in
-  anything the reader holds alongside the diff: code, Javadoc, README, or a pull
-  request description. The diff and the commit message already carry it.
-- **Branch-internal narrative.** Do not mention intermediate states, abandoned
-  approaches, or "no longer" behaviour unless users of a published release
-  actually experienced the old state.
-- **Low-value scaffolding.** No ownerless TODOs, unused future-proofing, debug
-  artefacts, or defensive wrappers around failure modes nothing can reach.
-- **Coded labels.** Write rules and findings as plain imperatives. No `[R1]`,
-  `Option B`, or any index a reader has to decode.
-
-Never delete a comment documenting an invariant, a protocol constraint, a
-platform quirk, or an upstream workaround. Those are the facts
-[Source comments](#source-comments) keeps.
+- **tmux** is always lowercase, including at the start of a sentence.
+- **Javadoc** is capitalized; **JDK** and **JVM** are uppercase. Write
+  **JDK 25** rather than "Java 25".
+- **Domain nouns** match tmux: `server`, `session`, `window`, `pane`, `client`,
+  `option`, `hook`, `buffer` — no synonyms.
+- **Literal identifiers** beat paraphrases: `LIBTMUX_TOOLSETS=inspect`,
+  `--rerun-tasks`, `/tmp/libtmux-java-test/`.
+- **No brittle references or coded labels:** avoid hard-coded line numbers,
+  file/test counts, dated "as of" claims, bare SHAs, `[R1]` / `Option B` rule
+  codes, or local absolute paths outside benchmark logs.
 
 ## Code blocks
 
-Code blocks are paste-and-run units: pasting one block runs exactly one
-intended action. Doctests and other executed examples are exempt — the test
-suite runs them, nobody pastes them.
-
-- **One command per block.** Multiple steps may share a block only when
-  explicitly chained with `&&`, `;`, or `\` continuations — the chain is
-  then one logical command.
-- **Explanations go in prose above the block**, never as `#` comments inside it.
-- **Command menus are per-command blocks with prose lead-ins**, not tables.
-- **Shell commands use the `console` tag with a `$ ` prefix.** This separates
-  interactive commands from scripts and enables prompt-aware copy.
-- **Split long commands with `\`** — one flag or flag+value pair per indented
-  continuation line, positional arguments last.
-
-Good:
-
-Show the last ten commits as a graph:
-
-```console
-$ git log \
-    --max-count=10 \
-    --graph \
-    --oneline
-```
-
-Bad:
-
-```console
-# Show the last ten commits as a graph
-$ git log --max-count=10 --graph --oneline
-```
+Follow [`libtmux/.github` `WRITING.md`](https://github.com/libtmux/.github/blob/main/WRITING.md#markdown)
+for plain CommonMark (never GitHub-only `> [!NOTE]` or `> [!WARNING]` alerts,
+which break on Maven Central and external renderers), one logical `$ `-prefixed
+command per `console` fence split with `\`, explanations in prose above the
+fence rather than `#` comments inside, and code lines held within 80 columns.

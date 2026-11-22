@@ -38,7 +38,7 @@ argv parsing is what this path actually goes through.
 
 Each carrier is responsible for encoding a literal argument correctly for its
 own parser; no shared pre-escaping step exists to get out of step with either
-one. A caller composing untrusted text into a command argument gets the
-correct grouping behavior regardless of which carrier eventually sends it. See
-[SECURITY.md](../../SECURITY.md) for what this means for text a caller did not
-author.
+one. A caller passing untrusted text as its own argument gets the correct
+grouping behavior regardless of which carrier sends it; concatenating untrusted
+text into a command argument remains the caller's boundary, and
+`TmuxFormats.literal` neutralizes `#(...)` format expansion where needed.
