@@ -122,11 +122,13 @@ jobs:
           enable-cache: false
 
       - name: Install the pinned script tools
-        run: uv sync --locked
+        run: uv sync --project scripts --locked
 
       - name: Check script formatting
         run: >-
-          uv run --locked ruff format --check
+          uv run --project scripts --locked ruff format
+          --config scripts/pyproject.toml
+          --check
           scripts
           libtmux-workspace-cli/src/test/resources
           integration-tests/src/test/resources
@@ -134,7 +136,8 @@ jobs:
 
       - name: Lint the scripts
         run: >-
-          uv run --locked ruff check
+          uv run --project scripts --locked ruff check
+          --config scripts/pyproject.toml
           scripts
           libtmux-workspace-cli/src/test/resources
           integration-tests/src/test/resources
@@ -142,14 +145,15 @@ jobs:
 
       - name: Type check the scripts
         run: >-
-          uv run --locked ty check
+          uv run --project scripts --locked ty check
+          --project scripts
           scripts
           libtmux-workspace-cli/src/test/resources
           integration-tests/src/test/resources
           tools/mcp-swap/src/test/resources
 
       - name: Test the scripts
-        run: uv run --locked pytest scripts
+        run: uv run --project scripts --locked pytest scripts
 
   # A release without the upload: the version a tag would publish, signed by a key made for this run,
   # checked against what the Central Portal refuses, then resolved by builds of their own that see

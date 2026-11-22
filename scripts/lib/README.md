@@ -1,7 +1,7 @@
 # lib
 
 Modules the scripts share. A script imports one after putting `scripts/lib` on
-`sys.path`; the tests find it through `pythonpath` in `pyproject.toml`.
+`sys.path`; the tests find it through `pythonpath` in `scripts/pyproject.toml`.
 
 ## bounded
 
@@ -26,5 +26,5 @@ here. `gh run list --limit 50` took 2.5 s once, so the 60 s `NETWORK_SECONDS` in
 Run the tests, which start a command that starts a child and check that both die:
 
 ```console
-$ uv run --locked --offline pytest scripts/lib
+$ uv run --project scripts --locked --offline pytest scripts/lib
 ```

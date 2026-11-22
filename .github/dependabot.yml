@@ -19,7 +19,7 @@ updates:
     cooldown:
       default-days: 7
   - package-ecosystem: "uv"
-    directory: "/"
+    directory: "/scripts"
     schedule:
       interval: "weekly"
     groups:

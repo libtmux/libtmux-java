@@ -39,5 +39,5 @@ $ uv run scripts/ci-plan/ci_plan.py verify \
 Run the tests, which also check that every rule fails when it is removed:
 
 ```console
-$ uv run pytest scripts/ci-plan
+$ uv run --project scripts pytest scripts/ci-plan
 ```
