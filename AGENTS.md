@@ -34,5 +34,6 @@ being made:
   are in [`.github/CONTRIBUTING.md`](.github/CONTRIBUTING.md#checking-the-scripts).
 - Contribution workflow, building, testing, and pull requests:
   [`.github/CONTRIBUTING.md`](.github/CONTRIBUTING.md)
-- Security-sensitive changes: [`SECURITY.md`](SECURITY.md)
+- Reporting a vulnerability:
+  [GitHub security advisories](https://github.com/libtmux/libtmux-java/security/advisories/new)
 - Cutting a release: [`RELEASING.md`](RELEASING.md)
