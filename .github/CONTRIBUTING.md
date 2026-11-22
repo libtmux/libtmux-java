@@ -191,18 +191,20 @@ The support scripts under [`scripts/`](../scripts/README.md), and the Python
 programs that tests run from `libtmux-workspace-cli/src/test/resources`,
 `integration-tests/src/test/resources` and `tools/mcp-swap/src/test/resources`,
 are checked outside Gradle with [uv](https://docs.astral.sh/uv/).
-`pyproject.toml` pins ruff, ty and pytest in `uv.lock`; `--locked` refuses to
-run against a stale lock. CI runs the same commands in the
-`scripts (ruff, ty, pytest)` job. Install the pinned tools:
+`scripts/pyproject.toml` pins ruff, ty and pytest in `scripts/uv.lock`;
+`--locked` refuses to run against a stale lock. CI runs the same commands in
+the `scripts (ruff, ty, pytest)` job. Install the pinned tools:
 
 ```console
-$ uv sync --locked
+$ uv sync --project scripts --locked
 ```
 
 Check formatting:
 
 ```console
-$ uv run --locked ruff format --check \
+$ uv run --project scripts --locked ruff format \
+    --config scripts/pyproject.toml \
+    --check \
     scripts \
     libtmux-workspace-cli/src/test/resources \
     integration-tests/src/test/resources \
@@ -212,7 +214,8 @@ $ uv run --locked ruff format --check \
 Lint:
 
 ```console
-$ uv run --locked ruff check \
+$ uv run --project scripts --locked ruff check \
+    --config scripts/pyproject.toml \
     scripts \
     libtmux-workspace-cli/src/test/resources \
     integration-tests/src/test/resources \
@@ -222,7 +225,8 @@ $ uv run --locked ruff check \
 Check types:
 
 ```console
-$ uv run --locked ty check \
+$ uv run --project scripts --locked ty check \
+    --project scripts \
     scripts \
     libtmux-workspace-cli/src/test/resources \
     integration-tests/src/test/resources \
@@ -232,7 +236,7 @@ $ uv run --locked ty check \
 Run the tests and doctests:
 
 ```console
-$ uv run --locked pytest scripts
+$ uv run --project scripts --locked pytest scripts
 ```
 
 A green `check` that reported `UP-TO-DATE` for every task verified nothing.

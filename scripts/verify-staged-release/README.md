@@ -32,5 +32,5 @@ The tests stage a small repository signed by a throwaway key and break it one
 way at a time. They need `gpg` and skip without it, except when `CI` is set.
 
 ```console
-$ uv run pytest scripts/verify-staged-release
+$ uv run --project scripts pytest scripts/verify-staged-release
 ```

@@ -16,5 +16,5 @@ terminal, under `integration-tests/src/test/resources/io/github/libtmux/it`. CI
 formats, lints and type checks those files with the scripts.
 
 ```console
-$ uv run pytest scripts/pty-helper
+$ uv run --project scripts pytest scripts/pty-helper
 ```

@@ -30,5 +30,5 @@ one:
 reads, break one thing at a time, and expect the guard for that thing to say so:
 
 ```console
-$ uv run pytest scripts/ci-check
+$ uv run --project scripts pytest scripts/ci-check
 ```

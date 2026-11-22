@@ -49,5 +49,5 @@ command line. [bounded](../lib/README.md) records what the limits sit above.
 The tests stand in a small source archive for tmux, so they run offline:
 
 ```console
-$ uv run pytest scripts/build-tmux-matrix
+$ uv run --project scripts pytest scripts/build-tmux-matrix
 ```

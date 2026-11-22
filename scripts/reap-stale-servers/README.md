@@ -32,5 +32,5 @@ The tests read a fake `/proc` and signal a stand-in process named `tmux`, so the
 start no real server:
 
 ```console
-$ uv run pytest scripts/reap-stale-servers
+$ uv run --project scripts pytest scripts/reap-stale-servers
 ```
