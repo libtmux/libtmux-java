@@ -30,7 +30,7 @@ jobs:
           version: '0.12.0'
           enable-cache: false
 
-      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6
+      - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6
         with:
           distribution: temurin
           # Gradle runs on 25 in every lane (last entry is JAVA_HOME); the lane's JDK runs the Clojure.
@@ -87,7 +87,7 @@ jobs:
       - name: The lane runs the tmux it is named after
         run: tmux -V
 
-      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6
+      - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6
         with:
           distribution: temurin
           # Gradle runs on 25 in every lane (last entry is JAVA_HOME); the lane's JDK runs the Clojure.
@@ -163,7 +163,7 @@ jobs:
           LANE: ${{ matrix.tmux }}
         run: echo "$HOME/tmux-builds/$LANE/bin" >> "$GITHUB_PATH"
 
-      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6
+      - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6
         with:
           distribution: temurin
           # Gradle runs on 25 in every lane (last entry is JAVA_HOME); the lane's JDK runs the Clojure.
